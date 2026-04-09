@@ -185,6 +185,7 @@ nav button.active{font-weight:700}
     <div class="flex" style="gap:8px">
       <span id="userBadge" class="badge badge-free"></span>
       <span id="tokDisplay" class="tok" style="display:none"></span>
+      <button class="btn btn-sm" style="background:#333;color:#ccc" onclick="showChangePw()">🔑 Contraseña</button>
       <button class="btn btn-sm btn-red" onclick="doLogout()">Salir</button>
     </div>
   </header>
@@ -288,6 +289,18 @@ nav button.active{font-weight:700}
       <div class="card" id="betCard">
         <h2>🤖 GLAI — Apuesta Recomendada</h2>
         <div id="betContent"></div>
+      </div>
+
+      <!-- Esquinas y Tarjetas -->
+      <div class="grid2">
+        <div class="card" id="cornersCard">
+          <h2>🚩 Tiros de Esquina</h2>
+          <div id="cornersContent"></div>
+        </div>
+        <div class="card" id="cardsCard">
+          <h2>🟨 Tarjetas</h2>
+          <div id="cardsContent"></div>
+        </div>
       </div>
 
       <!-- Historial equipos -->
@@ -397,6 +410,24 @@ nav button.active{font-weight:700}
       </div>
     </div>
   </div>
+<!-- ── MODAL CAMBIAR CONTRASEÑA ──────────────────────── -->
+<div id="pwModal" style="display:none;position:fixed;inset:0;background:#000a;z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px;width:340px;max-width:95vw">
+    <h2 style="margin-bottom:20px;font-size:1.1rem">🔑 Cambiar Contraseña</h2>
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px">Contraseña actual</label>
+    <input id="pwCurrent" type="password" placeholder="Tu contraseña actual" style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.95rem"/>
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px">Nueva contraseña</label>
+    <input id="pwNew" type="password" placeholder="Mínimo 6 caracteres" style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.95rem"/>
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px">Confirmar nueva contraseña</label>
+    <input id="pwConfirm" type="password" placeholder="Repite la nueva contraseña" style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:.95rem"/>
+    <div id="pwMsg" style="min-height:20px;margin-bottom:12px;font-size:.85rem"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-green" style="flex:1" onclick="submitChangePw()">Guardar</button>
+      <button class="btn" style="flex:1;background:#333;color:#ccc" onclick="hideChangePw()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -885,6 +916,71 @@ function renderGlai(d, teamA, teamB) {
     </div>`;
   document.getElementById('betContent').innerHTML = betHtml;
 
+  // ── Esquinas ────────────────────────────────────
+  const corners = d.corners || {};
+  document.getElementById('cornersContent').innerHTML = `
+    <div style="text-align:center;padding:10px 0 16px">
+      <div style="font-size:2.4rem;font-weight:900;color:var(--orange)">${corners.total||'?'}</div>
+      <div style="font-size:.75rem;color:var(--muted)">Total esperado</div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <div class="xgCard" style="flex:1">
+        <div class="xgVal" style="color:var(--blue);font-size:1.5rem">${corners.teamA||'?'}</div>
+        <div class="xgLbl">${teamA}</div>
+      </div>
+      <div class="xgCard" style="flex:1">
+        <div class="xgVal" style="color:var(--red);font-size:1.5rem">${corners.teamB||'?'}</div>
+        <div class="xgLbl">${teamB}</div>
+      </div>
+    </div>
+    <div class="statRow">
+      <span style="font-size:.83rem">Más de 8.5 esquinas</span>
+      <span class="tag ${(corners.over8_5||0)>=55?'tag-green':'tag-orange'}">${corners.over8_5||0}%</span>
+    </div>
+    <div class="statRow">
+      <span style="font-size:.83rem">Más de 10.5 esquinas</span>
+      <span class="tag ${(corners.over10_5||0)>=55?'tag-green':'tag-orange'}">${corners.over10_5||0}%</span>
+    </div>
+    <div class="statRow" style="border:none">
+      <span style="font-size:.83rem">Más de 12.5 esquinas</span>
+      <span class="tag ${(corners.over12_5||0)>=55?'tag-green':'tag-orange'}">${corners.over12_5||0}%</span>
+    </div>`;
+
+  // ── Tarjetas ─────────────────────────────────────
+  const cards = d.cards || {};
+  const redColor = (cards.redProb||0) >= 30 ? 'var(--red)' : 'var(--orange)';
+  document.getElementById('cardsContent').innerHTML = `
+    <div style="text-align:center;padding:10px 0 16px">
+      <div style="font-size:2.4rem;font-weight:900;color:#ffd700">${cards.total||'?'}</div>
+      <div style="font-size:.75rem;color:var(--muted)">Amarillas totales esperadas</div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <div class="xgCard" style="flex:1">
+        <div class="xgVal" style="color:var(--blue);font-size:1.5rem">${cards.teamA||'?'}</div>
+        <div class="xgLbl">${teamA}</div>
+      </div>
+      <div class="xgCard" style="flex:1">
+        <div class="xgVal" style="color:var(--red);font-size:1.5rem">${cards.teamB||'?'}</div>
+        <div class="xgLbl">${teamB}</div>
+      </div>
+    </div>
+    <div class="statRow">
+      <span style="font-size:.83rem">Más de 2.5 amarillas</span>
+      <span class="tag ${(cards.over2_5||0)>=55?'tag-green':'tag-orange'}">${cards.over2_5||0}%</span>
+    </div>
+    <div class="statRow">
+      <span style="font-size:.83rem">Más de 3.5 amarillas</span>
+      <span class="tag ${(cards.over3_5||0)>=55?'tag-green':'tag-orange'}">${cards.over3_5||0}%</span>
+    </div>
+    <div class="statRow">
+      <span style="font-size:.83rem">Más de 4.5 amarillas</span>
+      <span class="tag ${(cards.over4_5||0)>=55?'tag-green':'tag-orange'}">${cards.over4_5||0}%</span>
+    </div>
+    <div class="statRow" style="border:none">
+      <span style="font-size:.83rem">🟥 Prob. tarjeta roja</span>
+      <span class="tag" style="background:#b71c1c1a;color:${redColor};border:1px solid ${redColor}66">${cards.redProb||0}%</span>
+    </div>`;
+
   // ── Historial equipos ───────────────────────────
   renderHistory('A', histA, teamA, pred.xgA);
   renderHistory('B', histB, teamB, pred.xgB);
@@ -1153,6 +1249,57 @@ function showUserMsg(msg, ok) {
   el.textContent = msg;
   setTimeout(() => el.style.display = 'none', 3000);
 }
+
+// ════════════════════════════════════════════════════
+// CAMBIAR CONTRASEÑA
+// ════════════════════════════════════════════════════
+function showChangePw() {
+  document.getElementById('pwCurrent').value = '';
+  document.getElementById('pwNew').value = '';
+  document.getElementById('pwConfirm').value = '';
+  document.getElementById('pwMsg').textContent = '';
+  const m = document.getElementById('pwModal');
+  m.style.display = 'flex';
+}
+
+function hideChangePw() {
+  document.getElementById('pwModal').style.display = 'none';
+}
+
+async function submitChangePw() {
+  const currentPassword = document.getElementById('pwCurrent').value;
+  const newPassword     = document.getElementById('pwNew').value;
+  const confirmPassword = document.getElementById('pwConfirm').value;
+  const msgEl = document.getElementById('pwMsg');
+
+  msgEl.textContent = '';
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    msgEl.innerHTML = '<span style="color:var(--red)">Completa todos los campos</span>';
+    return;
+  }
+
+  try {
+    const r = await apiFetch('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      msgEl.innerHTML = '<span style="color:var(--green)">' + d.msg + '</span>';
+      setTimeout(hideChangePw, 1800);
+    } else {
+      msgEl.innerHTML = '<span style="color:var(--red)">❌ ' + (d.error || 'Error') + '</span>';
+    }
+  } catch {
+    msgEl.innerHTML = '<span style="color:var(--red)">Error de conexión</span>';
+  }
+}
+
+// Cerrar modal al hacer clic fuera
+document.addEventListener('click', e => {
+  const modal = document.getElementById('pwModal');
+  if (e.target === modal) hideChangePw();
+});
 
 // ════════════════════════════════════════════════════
 // INICIO
