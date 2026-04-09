@@ -13,6 +13,11 @@ class GLAIEngine:
         self._scan_lock = threading.Lock()
         self._scan_running = False
         self._scan_progress = {'pct': 0, 'msg': 'Inactivo', 'learned': 0}
+        self._fixtures = []  # Partidos futuros de ResultadosFutbol
+
+    def get_fixtures(self):
+        """Retorna los fixtures futuros guardados en el último scan."""
+        return self._fixtures
 
     # ─── Aprendizaje ──────────────────────────────────────────────
     def learn(self, sport, league_id, home_team, away_team,
@@ -227,6 +232,100 @@ class GLAIEngine:
             'hasRealData': has_real,
         }
 
+    # ─── Predicción de esquinas y tarjetas ───────────────────────────
+    def predict_corners_cards(self, xg_a, xg_b, league_id='soccer'):
+        """
+        Predice tiros de esquina y tarjetas usando modelo estadístico
+        basado en xG, diferencial de fuerzas y tendencias por liga.
+        """
+        total_xg = xg_a + xg_b if (xg_a + xg_b) > 0 else 2.5
+
+        # ── TIROS DE ESQUINA ──────────────────────────────────────────
+        # Total correlacionado con intensidad ofensiva (xG total)
+        base_corners = 8.0 + total_xg * 1.3
+
+        # Liga: algunas tienen más esquinas por estilo de juego
+        league_corner_factor = {
+            'eng.1': 1.08, 'esp.1': 1.05, 'ger.1': 1.10,
+            'ita.1': 0.95, 'fra.1': 1.00, 'ned.1': 1.08,
+            'por.1': 1.02, 'bel.1': 1.05,
+            'mex.1': 0.95, 'usa.1': 1.02, 'arg.1': 0.93,
+            'bra.1': 0.95, 'col.1': 0.92,
+            'uefa.champions': 1.06, 'uefa.europa': 1.04,
+        }.get(league_id, 1.0)
+
+        base_corners *= league_corner_factor
+
+        # Reparto proporcional al xG (equipo más dominante gana más esquinas)
+        share_a = (xg_a / total_xg) * 1.04  # leve ventaja local
+        share_a = min(max(share_a, 0.30), 0.70)
+        share_b = 1 - share_a
+
+        corners_a = round(base_corners * share_a, 1)
+        corners_b = round(base_corners * share_b, 1)
+        total_corners = round(corners_a + corners_b, 1)
+
+        # Over/Under esquinas
+        over_8_5  = min(88, max(15, round(45 + (total_xg - 2.0) * 14)))
+        over_10_5 = min(78, max(10, round(35 + (total_xg - 2.0) * 12)))
+        over_12_5 = min(60, max(5,  round(20 + (total_xg - 2.0) * 9)))
+
+        # ── TARJETAS ──────────────────────────────────────────────────
+        # Rivalidad / competitividad: partidos ajustados = más tarjetas
+        diff = abs(xg_a - xg_b)
+        competitiveness = max(0.3, 1 - diff / (total_xg + 0.1))
+
+        # Factor por liga
+        league_card_factor = {
+            'esp.1': 1.22, 'ita.1': 1.18, 'tur.1': 1.25,
+            'arg.1': 1.28, 'bra.1': 1.22, 'col.1': 1.20,
+            'eng.1': 0.96, 'ger.1': 0.88, 'fra.1': 1.02,
+            'por.1': 1.12, 'ned.1': 0.94, 'sco.1': 1.05,
+            'mex.1': 1.10, 'usa.1': 0.92,
+            'uefa.champions': 1.05, 'uefa.europa': 1.10, 'uefa.conference': 1.08,
+        }.get(league_id, 1.0)
+
+        base_yellows = 3.4 * league_card_factor * (0.75 + competitiveness * 0.45)
+
+        # El equipo que va perdiendo (menor xG) tiende a acumular más tarjetas
+        losing_factor = 0.10  # 10% extra para el equipo más débil
+        if xg_a < xg_b:
+            yellows_a = round(base_yellows * (0.52 + losing_factor), 1)
+            yellows_b = round(base_yellows * (0.48 - losing_factor / 2), 1)
+        else:
+            yellows_a = round(base_yellows * (0.50 - losing_factor / 2), 1)
+            yellows_b = round(base_yellows * (0.50 + losing_factor), 1)
+
+        total_yellows = round(yellows_a + yellows_b, 1)
+
+        # Probabilidad de tarjeta roja
+        red_prob = round(min(45, max(5, competitiveness * 20 * league_card_factor)))
+
+        # Over/Under tarjetas amarillas
+        over_2_5 = min(90, max(25, round(55 + (total_yellows - 3.4) * 18)))
+        over_3_5 = min(78, max(15, round(40 + (total_yellows - 3.4) * 16)))
+        over_4_5 = min(62, max(8,  round(28 + (total_yellows - 3.4) * 13)))
+
+        return {
+            'corners': {
+                'total':    total_corners,
+                'teamA':    corners_a,
+                'teamB':    corners_b,
+                'over8_5':  over_8_5,
+                'over10_5': over_10_5,
+                'over12_5': over_12_5,
+            },
+            'cards': {
+                'total':    total_yellows,
+                'teamA':    yellows_a,
+                'teamB':    yellows_b,
+                'redProb':  int(red_prob),
+                'over2_5':  over_2_5,
+                'over3_5':  over_3_5,
+                'over4_5':  over_4_5,
+            }
+        }
+
     # ─── Estado del scan autónomo ──────────────────────────────────
     def scan_status(self):
         return {
@@ -281,6 +380,42 @@ class GLAIEngine:
                     n3 = bsc.scan(days_back=days_back, glai=self)
                     total_learned += n3
                     used_sources.append('BeSoccer')
+
+                # TheSportsDB fixtures futuros (gratis, sin key extra)
+                try:
+                    self.set_progress(88, 'Buscando partidos futuros (TheSportsDB)...', total_learned)
+                    tsdb_fixtures = tsdb.get_next_fixtures(days_ahead=7)
+                    if tsdb_fixtures:
+                        # Merge con fixtures existentes, sin duplicados
+                        existing_keys = {(f['homeTeam'], f['awayTeam']) for f in self._fixtures}
+                        for f in tsdb_fixtures:
+                            k = (f['homeTeam'], f['awayTeam'])
+                            if k not in existing_keys:
+                                self._fixtures.append(f)
+                                existing_keys.add(k)
+                    print(f"[GLAI] {len(self._fixtures)} fixtures futuros guardados")
+                except Exception as e:
+                    print(f"[GLAI] TSDB fixtures skipped: {e}")
+
+                # football-data.org (si hay token configurado)
+                try:
+                    fd_token = self.db.get_key('footballdata')
+                    if fd_token:
+                        from scrapers.footballdata import FootballDataScraper
+                        fd = FootballDataScraper(fd_token)
+                        self.set_progress(92, 'Escaneando football-data.org...', total_learned)
+                        n_fd, fd_fixtures = fd.scan(days_back=days_back, days_ahead=7, glai=self)
+                        total_learned += n_fd
+                        used_sources.append('FootballData')
+                        # Agregar fixtures sin duplicar
+                        existing_keys = {(f['homeTeam'], f['awayTeam']) for f in self._fixtures}
+                        for f in fd_fixtures:
+                            k = (f['homeTeam'], f['awayTeam'])
+                            if k not in existing_keys:
+                                self._fixtures.append(f)
+                                existing_keys.add(k)
+                except Exception as e:
+                    print(f"[GLAI] FootballData skipped: {e}")
 
                 self.db.finish_scan_log(scan_id, total_learned, used_sources)
                 self.set_progress(100, f'✅ Completado — {total_learned} resultados aprendidos', total_learned)
