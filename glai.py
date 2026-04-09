@@ -341,6 +341,236 @@ class GLAIEngine:
         if learned is not None:
             self._scan_progress['learned'] = learned
 
+    # ─── NBA — Predicción ─────────────────────────────────────────
+    def predict_nba(self, home_ppg, away_ppg):
+        """
+        Predicción NBA — distribución Normal basada en PPG.
+        Incluye proyección por cuartos Q1-Q4.
+        """
+        HOME_ADV = 3.0
+        SIGMA    = 12.0
+
+        adj_home = home_ppg + HOME_ADV
+        spread   = adj_home - away_ppg
+        z        = spread / (SIGMA * math.sqrt(2))
+        p_home   = 0.5 + 0.5 * math.erf(z)
+        p_away   = 1.0 - p_home
+
+        total   = adj_home + away_ppg
+        ou_line = round(total / 5) * 5          # línea redondeada al 5 más cercano
+        ou_over = min(75, max(25, round(50 + (total - ou_line) / (SIGMA * 0.4))))
+
+        # Proyecciones por cuarto
+        q_factors = [0.245, 0.250, 0.245, 0.260]
+        quarters  = []
+        for i, qf in enumerate(q_factors):
+            qh    = round(adj_home * qf, 1)
+            qa    = round(away_ppg * qf, 1)
+            qt    = round(qh + qa, 1)
+            q_ou  = round(qt / 2.5) * 2.5
+            q_ov  = min(72, max(28, round(50 + (qt - q_ou) * 8)))
+            quarters.append({'q': i + 1, 'home': qh, 'away': qa,
+                              'total': qt, 'ouLine': q_ou, 'overPct': q_ov})
+
+        return {
+            'pctA':     round(p_home * 100),
+            'pctB':     round(p_away * 100),
+            'projHome': round(adj_home, 1),
+            'projAway': round(away_ppg, 1),
+            'total':    round(total, 1),
+            'spread':   round(spread, 1),
+            'ouLine':   ou_line,
+            'ouOver':   ou_over,
+            'quarters': quarters,
+        }
+
+    def ai_bet_nba(self, pred, team_a, team_b, hist_a=None, hist_b=None):
+        """Genera recomendación de apuesta NBA."""
+        pA     = pred.get('pctA', 50)
+        pB     = pred.get('pctB', 50)
+        spread = pred.get('spread', 0)
+        total  = pred.get('total', 220)
+        ou_ln  = pred.get('ouLine', 220)
+        ou_ov  = pred.get('ouOver', 50)
+        abs_sp = abs(spread)
+
+        bets = []
+        if pA >= 62:
+            bets.append({'bet': f'{team_a} Gana (Moneyline)', 'conf': min(80, pA),
+                         'reason': f'{team_a} tiene {pA}% de prob. · spread proyectado +{abs_sp:.1f} pts'})
+        elif pB >= 62:
+            bets.append({'bet': f'{team_b} Gana (Moneyline)', 'conf': min(80, pB),
+                         'reason': f'{team_b} tiene {pB}% de prob. como visitante'})
+
+        if abs_sp >= 4:
+            fav  = team_a if spread > 0 else team_b
+            conf = min(72, round(50 + abs_sp * 2.5))
+            bets.append({'bet': f'{fav} -{abs_sp:.1f} (Spread)', 'conf': conf,
+                         'reason': f'Diferencia proyectada {abs_sp:.1f} pts — ventaja significativa'})
+
+        if ou_ov >= 58:
+            bets.append({'bet': f'Más de {ou_ln} pts (O/U)', 'conf': ou_ov,
+                         'reason': f'Total proyectado {total:.1f} pts · favorece el Over {ou_ln}'})
+        elif ou_ov <= 42:
+            bets.append({'bet': f'Menos de {ou_ln} pts (O/U)', 'conf': 100 - ou_ov,
+                         'reason': f'Total proyectado {total:.1f} pts · partidos de bajo puntaje'})
+
+        if not bets:
+            bets.append({'bet': f'{team_a} Gana (Moneyline)', 'conf': max(pA, 51),
+                         'reason': 'Partido parejo — ventaja local ligera favorece al local'})
+
+        bets.sort(key=lambda x: x['conf'], reverse=True)
+        narrative = (
+            f"🏀 GLAI analiza el partido NBA entre {team_a} y {team_b}.\n\n"
+            f"PPG ajustado: {team_a} {pred.get('projHome')} pts · {team_b} {pred.get('projAway')} pts. "
+            f"Total proyectado: {total:.1f} pts.\n\n"
+            f"{team_a} tiene {pA}% de probabilidades de ganar con spread de {spread:.1f} pts.\n\n"
+            f"La apuesta de mayor confianza es: \"{bets[0]['bet']}\" ({bets[0]['conf']}%). "
+            f"{bets[0]['reason']}.\n\n"
+            f"ℹ️ Este análisis es orientativo. Apuesta con responsabilidad."
+        )
+        return {
+            'best':      bets[0] if bets else None,
+            'alt':       bets[1] if len(bets) > 1 else None,
+            'narrative': narrative,
+        }
+
+    # ─── MLB — Predicción ─────────────────────────────────────────
+    def predict_mlb(self, home_rpg, away_rpg):
+        """
+        Predicción MLB — Poisson sobre carreras por partido.
+        Incluye análisis 1er inning y proyección entrada por entrada.
+        """
+        HOME_ADV = 0.20
+        adj_home = home_rpg + HOME_ADV
+        max_r    = 15
+
+        # Probabilidad de victoria (Poisson)
+        p_home = p_away = p_tie = 0.0
+        for h in range(max_r + 1):
+            for a in range(max_r + 1):
+                p = self._poisson(adj_home, h) * self._poisson(away_rpg, a)
+                if   h > a: p_home += p
+                elif h < a: p_away += p
+                else:       p_tie  += p
+        # Extra innings: ligera ventaja local
+        p_home += p_tie * 0.52
+        p_away += p_tie * 0.48
+        tot = p_home + p_away
+        p_home /= tot
+        p_away /= tot
+
+        total = adj_home + away_rpg
+
+        over_4_5 = sum(
+            self._poisson(adj_home, h) * self._poisson(away_rpg, a)
+            for h in range(max_r + 1) for a in range(max_r + 1) if h + a > 4.5
+        )
+        over_7_5 = sum(
+            self._poisson(adj_home, h) * self._poisson(away_rpg, a)
+            for h in range(max_r + 1) for a in range(max_r + 1) if h + a > 7.5
+        )
+
+        # ── 1er Inning ────────────────────────────────────────────
+        F1 = 0.12
+        first_h   = round(adj_home * F1, 2)
+        first_a   = round(away_rpg * F1, 2)
+        first_tot = round(first_h + first_a, 2)
+        p_any     = 1.0 - self._poisson(first_h, 0) * self._poisson(first_a, 0)
+        p_f_ov05  = 1.0 - self._poisson(first_tot, 0)
+
+        # ── Proyección entrada por entrada ────────────────────────
+        inning_factors = [0.120, 0.105, 0.112, 0.108, 0.115,
+                          0.112, 0.105, 0.110, 0.113]
+        innings = []
+        for i, f in enumerate(inning_factors):
+            ih  = round(adj_home * f, 2)
+            ia  = round(away_rpg * f, 2)
+            it  = round(ih + ia, 2)
+            psc = round((1.0 - self._poisson(it, 0)) * 100)
+            innings.append({'inning': i + 1, 'home': ih, 'away': ia,
+                             'total': it, 'scorePct': psc})
+
+        # ── Matriz de marcadores ──────────────────────────────────
+        matrix = []
+        for h in range(12):
+            for a in range(12):
+                p = self._poisson(adj_home, h) * self._poisson(away_rpg, a)
+                matrix.append({'h': h, 'a': a, 'p': round(p, 4)})
+        matrix.sort(key=lambda x: x['p'], reverse=True)
+
+        return {
+            'pctA':     round(p_home * 100),
+            'pctB':     round(p_away * 100),
+            'projHome': round(adj_home, 2),
+            'projAway': round(away_rpg, 2),
+            'total':    round(total, 2),
+            'over4_5':  round(over_4_5 * 100),
+            'over7_5':  round(over_7_5 * 100),
+            'first': {
+                'projHome':   first_h,
+                'projAway':   first_a,
+                'projTotal':  first_tot,
+                'scoreAny':   round(p_any * 100),
+                'over05':     round(p_f_ov05 * 100),
+            },
+            'innings': innings,
+            'matrix':  matrix[:10],
+        }
+
+    def ai_bet_mlb(self, pred, team_a, team_b, hist_a=None, hist_b=None):
+        """Genera recomendación de apuesta MLB."""
+        pA      = pred.get('pctA', 50)
+        pB      = pred.get('pctB', 50)
+        total   = pred.get('total', 8.5)
+        ov45    = pred.get('over4_5', 50)
+        ov75    = pred.get('over7_5', 50)
+        first   = pred.get('first', {})
+
+        bets = []
+        if pA >= 58:
+            bets.append({'bet': f'{team_a} Gana (Moneyline)', 'conf': min(75, pA),
+                         'reason': f'{team_a} tiene {pA}% de prob. con ventaja local (+0.20 carreras)'})
+        elif pB >= 58:
+            bets.append({'bet': f'{team_b} Gana (Moneyline)', 'conf': min(75, pB),
+                         'reason': f'{team_b} tiene {pB}% de prob. visitando'})
+
+        if ov45 >= 60:
+            bets.append({'bet': 'Más de 4.5 carreras', 'conf': ov45,
+                         'reason': f'{ov45}% de probabilidad · total proyectado {total:.1f} carreras'})
+        elif ov45 <= 42:
+            bets.append({'bet': 'Menos de 4.5 carreras', 'conf': 100 - ov45,
+                         'reason': f'Solo {ov45}% para más de 4.5 — pitcheo dominante esperado'})
+
+        if ov75 >= 58:
+            bets.append({'bet': 'Más de 7.5 carreras', 'conf': ov75,
+                         'reason': f'{ov75}% probabilidad · ofensivas productivas proyectadas'})
+
+        if first.get('scoreAny', 0) >= 65:
+            bets.append({'bet': '1er Inning — Alguien Anota', 'conf': first.get('scoreAny', 0),
+                         'reason': f'{first.get("scoreAny")}% de que algún equipo anote en 1er inning'})
+
+        if not bets:
+            bets.append({'bet': 'Más de 4.5 carreras', 'conf': ov45,
+                         'reason': f'Total proyectado {total:.1f} carreras'})
+
+        bets.sort(key=lambda x: x['conf'], reverse=True)
+        narrative = (
+            f"⚾ GLAI analiza el partido MLB entre {team_a} y {team_b}.\n\n"
+            f"Carreras proyectadas: {team_a} {pred.get('projHome'):.2f} · "
+            f"{team_b} {pred.get('projAway'):.2f} · Total: {total:.2f}.\n\n"
+            f"{team_a} tiene {pA}% de probabilidades de ganar. "
+            f"Over 4.5: {ov45}% · Over 7.5: {ov75}%.\n\n"
+            f"1er Inning — total proyectado {first.get('projTotal','?')} carreras · "
+            f"{first.get('scoreAny',0)}% probabilidad de que alguien anote.\n\n"
+            f"ℹ️ Este análisis es orientativo. Apuesta con responsabilidad."
+        )
+        return {
+            'best':      bets[0] if bets else None,
+            'alt':       bets[1] if len(bets) > 1 else None,
+            'narrative': narrative,
+        }
+
     def auto_scan(self, days_back=7, sources=None):
         """
         Escaneo autónomo en segundo plano.

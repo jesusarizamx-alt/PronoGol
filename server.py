@@ -36,7 +36,7 @@ scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(
     func=lambda: glai.auto_scan(days_back=7),
     trigger='interval',
-    hours=2,
+    hours=1,
     id='glai_auto_learn',
     replace_existing=True
 )
@@ -111,6 +111,28 @@ def me():
         session['user'] = fresh
     return jsonify({'user': fresh or u})
 
+@app.route('/api/auth/change-password', methods=['POST'])
+@require_login
+def change_password():
+    data = request.get_json() or {}
+    current_pw  = data.get('currentPassword', '')
+    new_pw      = data.get('newPassword', '')
+    confirm_pw  = data.get('confirmPassword', '')
+
+    if not current_pw or not new_pw or not confirm_pw:
+        return jsonify({'ok': False, 'error': 'Completa todos los campos'}), 400
+    if new_pw != confirm_pw:
+        return jsonify({'ok': False, 'error': 'Las contraseñas nuevas no coinciden'}), 400
+    if len(new_pw) < 6:
+        return jsonify({'ok': False, 'error': 'La nueva contraseña debe tener al menos 6 caracteres'}), 400
+
+    u = current_user()
+    ok = users.change_password(u['username'], current_pw, new_pw)
+    if not ok:
+        return jsonify({'ok': False, 'error': 'La contraseña actual es incorrecta'}), 403
+
+    return jsonify({'ok': True, 'msg': '✅ Contraseña actualizada correctamente'})
+
 # ════════════════════════════════════════════════════════════════
 # RUTAS — PARTIDOS (ESPN proxy — sin CORS)
 # ════════════════════════════════════════════════════════════════
@@ -119,6 +141,27 @@ def me():
 def matches():
     try:
         data = espn.get_today_matches()
+        # Agregar fixtures futuros de ResultadosFutbol (próximos días)
+        fixtures = glai.get_fixtures()
+        if fixtures:
+            # Evitar duplicados por nombre de equipo
+            existing = {(m['homeTeam'], m['awayTeam']) for m in data}
+            for f in fixtures:
+                key = (f.get('homeTeam',''), f.get('awayTeam',''))
+                if key not in existing:
+                    data.append({
+                        'homeTeam':  f.get('homeTeam', ''),
+                        'awayTeam':  f.get('awayTeam', ''),
+                        'homeScore': '',
+                        'awayScore': '',
+                        'homeLogo':  '',
+                        'awayLogo':  '',
+                        'status':    'pre',
+                        'date':      f.get('date', ''),
+                        'league':    f.get('league', 'soccer'),
+                        'source':    'resultadosfutbol',
+                    })
+                    existing.add(key)
         return jsonify({'matches': data, 'total': len(data)})
     except Exception as e:
         return jsonify({'error': str(e), 'matches': []}), 500
@@ -173,37 +216,62 @@ def glai_analyze():
         # Refrescar sesión con nuevo balance
         session['user'] = users.get_user(u['username'])
 
-    data = request.get_json() or {}
-    team_a   = data.get('teamA', '')
-    team_b   = data.get('teamB', '')
-    league   = data.get('league', 'soccer')
-    xg_a    = float(data.get('xgA', 1.4))
-    xg_b    = float(data.get('xgB', 1.1))
+    data   = request.get_json() or {}
+    team_a = data.get('teamA', '')
+    team_b = data.get('teamB', '')
+    league = data.get('league', 'soccer')
+    sport  = data.get('sport', 'soccer')   # soccer | nba | mlb
+    val_a  = float(data.get('xgA', 1.4))  # xG / PPG / RPG
+    val_b  = float(data.get('xgB', 1.1))
+    tokens_left = session['user'].get('tokens') if u.get('role') == 'premium' else -1
 
-    # Historial real por equipo (TheSportsDB — sin límite de fecha)
+    # ── NBA ─────────────────────────────────────────────────────────
+    if sport == 'nba':
+        prediction = glai.predict_nba(val_a, val_b)
+        bet        = glai.ai_bet_nba(prediction, team_a, team_b)
+        return jsonify({
+            'ok':         True,
+            'sport':      'nba',
+            'tokensLeft': tokens_left,
+            'prediction': prediction,
+            'bet':        bet,
+            'total':      glai.total_learned(),
+        })
+
+    # ── MLB ─────────────────────────────────────────────────────────
+    if sport == 'mlb':
+        prediction = glai.predict_mlb(val_a, val_b)
+        bet        = glai.ai_bet_mlb(prediction, team_a, team_b)
+        return jsonify({
+            'ok':         True,
+            'sport':      'mlb',
+            'tokensLeft': tokens_left,
+            'prediction': prediction,
+            'bet':        bet,
+            'total':      glai.total_learned(),
+        })
+
+    # ── SOCCER (default) ────────────────────────────────────────────
     hist_a = tsdb.get_team_history(team_a, limit=5) if team_a else []
     hist_b = tsdb.get_team_history(team_b, limit=5) if team_b else []
-
-    # También aprende de estos partidos
     if team_a:
         tsdb.learn_team_events(team_a, glai, league_id=league)
     if team_b:
         tsdb.learn_team_events(team_b, glai, league_id=league)
 
-    # Predicción Poisson ajustada con historial
-    prediction = glai.predict('soccer', league, xg_a, xg_b)
-
-    # Apuesta IA
-    bet = glai.ai_bet(hist_a, hist_b, xg_a, xg_b, team_a, team_b)
-
-    # Stats de liga
-    lg_stats = glai.get_league_stats('soccer', league)
+    prediction    = glai.predict('soccer', league, val_a, val_b)
+    bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b)
+    corners_cards = glai.predict_corners_cards(val_a, val_b, league)
+    lg_stats      = glai.get_league_stats('soccer', league)
 
     return jsonify({
-        'ok':        True,
-        'tokensLeft': session['user'].get('tokens') if u.get('role') == 'premium' else -1,
+        'ok':         True,
+        'sport':      'soccer',
+        'tokensLeft': tokens_left,
         'prediction': prediction,
         'bet':        bet,
+        'corners':    corners_cards['corners'],
+        'cards':      corners_cards['cards'],
         'histA':      hist_a,
         'histB':      hist_b,
         'lgStats':    lg_stats,
