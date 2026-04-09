@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Soccer Predictor Pro ⚽</title>
+<style>
+:root{
+  --bg:#0d1117;--card:#161b22;--card2:#1c2230;--border:#30363d;
+  --green:#00e676;--blue:#2196f3;--purple:#9c27b0;--orange:#ff9800;
+  --red:#f44336;--text:#e6edf3;--muted:#8b949e;--gold:#ffd700;
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif}
+body{background:var(--bg);color:var(--text);min-height:100vh}
+
+/* ── LOGIN ───────────────────────────────────────── */
+#loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse at center,#0d2137 0%,#0d1117 70%)}
+.loginBox{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:360px;text-align:center;box-shadow:0 20px 60px #000a}
+.loginBox h1{font-size:2rem;margin-bottom:4px}
+.loginBox p{color:var(--muted);margin-bottom:28px;font-size:.9rem}
+.loginBox input{width:100%;padding:12px 14px;background:#0d1117;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:1rem;margin-bottom:14px}
+.loginBox input:focus{outline:none;border-color:var(--blue)}
+.btn{width:100%;padding:12px;border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;transition:.2s}
+.btn-green{background:var(--green);color:#000}
+.btn-green:hover{opacity:.9}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-blue:hover{opacity:.9}
+.btn-sm{width:auto;padding:6px 14px;font-size:.85rem}
+.btn-red{background:var(--red);color:#fff}
+.btn-orange{background:var(--orange);color:#000}
+.loginErr{color:var(--red);font-size:.85rem;margin-top:10px;min-height:18px}
+
+/* ── MAIN ────────────────────────────────────────── */
+#app{display:none}
+header{background:var(--card);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:1.3rem;flex:1}
+.badge{padding:4px 10px;border-radius:20px;font-size:.75rem;font-weight:700}
+.badge-free{background:#333;color:#aaa}
+.badge-premium{background:linear-gradient(135deg,#ffd700,#ff9800);color:#000}
+.badge-admin{background:linear-gradient(135deg,#9c27b0,#673ab7);color:#fff}
+.tok{font-size:.85rem;color:var(--gold)}
+
+nav{background:var(--card2);border-bottom:1px solid var(--border);display:flex;gap:0;overflow-x:auto}
+nav button{background:none;border:none;color:var(--muted);padding:12px 18px;cursor:pointer;font-size:.9rem;border-bottom:3px solid transparent;white-space:nowrap;transition:.2s}
+nav button.active,nav button:hover{color:var(--text);border-color:var(--blue)}
+nav button.active{font-weight:700}
+
+.page{display:none;padding:20px;max-width:1100px;margin:0 auto}
+.page.active{display:block}
+
+/* ── CARDS ───────────────────────────────────────── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+.card h2{font-size:1.1rem;margin-bottom:14px;color:var(--blue)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:600px){.grid2{grid-template-columns:1fr}}
+
+/* ── MATCHES ─────────────────────────────────────── */
+.matchCard{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:.2s}
+.matchCard:hover{border-color:var(--blue);background:#1a2436}
+.matchHeader{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.leagueBadge{background:#0d2137;color:var(--blue);border-radius:4px;padding:3px 8px;font-size:.7rem;font-weight:700}
+.matchTeams{display:flex;align-items:center;justify-content:center;gap:12px;font-size:1.05rem;font-weight:600}
+.matchTeams img{width:28px;height:28px;object-fit:contain}
+.score{font-size:1.4rem;font-weight:900;padding:0 10px}
+.statusPill{font-size:.72rem;padding:2px 8px;border-radius:10px;font-weight:700}
+.statusLive{background:#f443361a;color:var(--red)}
+.statusFinal{background:#0d2137;color:var(--muted)}
+.statusPre{background:#1a2d1a;color:var(--green)}
+
+/* ── GLAI ────────────────────────────────────────── */
+.inputRow{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+.inputRow label{font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px}
+.inputRow input,.inputRow select{background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;font-size:.95rem;width:100%}
+.inputGroup{flex:1;min-width:140px}
+.probBar{display:flex;border-radius:8px;overflow:hidden;height:44px;margin-bottom:16px}
+.probSeg{display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:.85rem;font-weight:700;transition:.5s}
+.probA{background:#1565c0}
+.probD{background:#424242}
+.probB{background:#b71c1c}
+.xgRow{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.xgCard{flex:1;min-width:120px;background:#0d1117;border-radius:8px;padding:12px;text-align:center}
+.xgVal{font-size:1.8rem;font-weight:900;color:var(--blue)}
+.xgLbl{font-size:.75rem;color:var(--muted);margin-top:2px}
+.miniStats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.miniStat{background:#0d1117;border-radius:8px;padding:10px 14px;text-align:center;flex:1;min-width:90px}
+.miniStatVal{font-size:1.3rem;font-weight:900}
+.miniStatLbl{font-size:.7rem;color:var(--muted)}
+
+/* Matrix */
+.matrixGrid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:14px}
+.mCell{background:#0d1117;border-radius:6px;padding:8px 4px;text-align:center;font-size:.8rem}
+.mCell.top{background:#0d3b6e;border:1px solid var(--blue)}
+.mCellScore{font-weight:700}
+.mCellPct{font-size:.65rem;color:var(--muted)}
+
+/* History */
+.histRow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.histBall{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:.7rem;font-weight:700;border:2px solid transparent}
+.histG{background:#1b5e201a;border-color:#4caf50;color:#4caf50}
+.histE{background:#37474f1a;border-color:#78909c;color:#78909c}
+.histP{background:#b71c1c1a;border-color:#ef5350;color:#ef5350}
+
+/* Bet block */
+.betBlock{background:linear-gradient(135deg,#0d2137,#1a0d37);border:1px solid #2196f355;border-radius:12px;padding:16px;margin-bottom:14px}
+.betTitle{font-size:.75rem;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase}
+.betMain{font-size:1.2rem;font-weight:900;color:var(--green);margin-bottom:6px}
+.betConf{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.confBar{flex:1;height:8px;background:#0d1117;border-radius:4px;overflow:hidden}
+.confFill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .6s}
+.betReason{font-size:.8rem;color:var(--muted)}
+
+/* Narrative */
+.narrative{background:#0d1117;border-left:3px solid var(--blue);border-radius:0 8px 8px 0;padding:12px 14px;font-size:.9rem;line-height:1.6;color:#cdd9e5;margin-bottom:14px;white-space:pre-wrap}
+
+/* ── ADMIN ───────────────────────────────────────── */
+.userTable{width:100%;border-collapse:collapse;font-size:.9rem}
+.userTable th{background:#0d1117;padding:10px 12px;text-align:left;color:var(--muted);font-weight:600}
+.userTable td{padding:10px 12px;border-bottom:1px solid var(--border)}
+.userTable tr:hover td{background:#1c2230}
+.roleSelect{background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:.85rem}
+.inputInline{background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:.85rem;width:120px}
+
+/* ── STATS ───────────────────────────────────────── */
+.statRow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.statRow:last-child{border:none}
+.leagueBar{height:6px;background:var(--blue);border-radius:3px;transition:.5s}
+
+/* ── SCAN PROGRESS ───────────────────────────────── */
+.progressWrap{background:#0d1117;border-radius:8px;overflow:hidden;height:10px;margin:10px 0}
+.progressBar{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:8px;transition:width .4s}
+.scanMsg{font-size:.8rem;color:var(--muted);margin-top:4px}
+
+/* ── UTILS ───────────────────────────────────────── */
+.tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.72rem;font-weight:700}
+.tag-green{background:#1b5e201a;color:#4caf50;border:1px solid #4caf5066}
+.tag-blue{background:#0d2137;color:var(--blue);border:1px solid #2196f366}
+.tag-purple{background:#1a0d371a;color:#ce93d8;border:1px solid #ce93d866}
+.tag-orange{background:#1a120d;color:var(--orange);border:1px solid #ff980066}
+.sep{border:none;border-top:1px solid var(--border);margin:14px 0}
+.flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ml-auto{margin-left:auto}
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid #ffffff30;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.alert{padding:10px 14px;border-radius:8px;font-size:.9rem;margin-bottom:10px}
+.alert-red{background:#b71c1c22;border:1px solid #f4433644;color:#ef9a9a}
+.alert-green{background:#1b5e2022;border:1px solid #4caf5044;color:#a5d6a7}
+.alert-blue{background:#0d213722;border:1px solid #2196f344;color:#90caf9}
+.alert-orange{background:#33200022;border:1px solid #ff980044;color:#ffcc80}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════════════════════ -->
+<div id="loginWrap">
+  <div class="loginBox">
+    <h1>⚽ Soccer Predictor</h1>
+    <p>Sistema IA con aprendizaje autónomo</p>
+    <input id="lUser" type="text" placeholder="Usuario" autocomplete="username"/>
+    <input id="lPass" type="password" placeholder="Contraseña" autocomplete="current-password"/>
+    <button class="btn btn-green" onclick="doLogin()">Ingresar</button>
+    <div class="loginErr" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     MAIN APP
+══════════════════════════════════════════════════ -->
+<div id="app">
+  <header>
+    <h1>⚽ Soccer Predictor Pro</h1>
+    <div class="flex" style="gap:8px">
+      <span id="userBadge" class="badge badge-free"></span>
+      <span id="tokDisplay" class="tok" style="display:none"></span>
+      <button class="btn btn-sm btn-red" onclick="doLogout()">Salir</button>
+    </div>
+  </header>
+
+  <nav>
+    <button class="active" onclick="showPage('matches')">🗓 Partidos</button>
+    <button onclick="showPage('glai')">🧠 GLAI IA</button>
+    <button onclick="showPage('stats')">📊 Estadísticas</button>
+    <button id="navAdmin" style="display:none" onclick="showPage('admin')">⚙️ Admin</button>
+  </nav>
+
+  <!-- ── PÁGINA: PARTIDOS ─────────────────────────── -->
+  <div id="pageMatches" class="page active">
+    <div class="card">
+      <div class="flex" style="margin-bottom:12px">
+        <h2 style="margin:0">Partidos de Hoy</h2>
+        <span class="ml-auto">
+          <button class="btn btn-sm btn-blue" onclick="loadMatches()">🔄 Actualizar</button>
+        </span>
+      </div>
+      <input id="matchFilter" placeholder="🔍 Filtrar equipo o liga..." style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;font-size:.9rem;margin-bottom:12px" oninput="filterMatches()"/>
+      <div id="matchList"><div class="alert alert-blue">⏳ Cargando partidos...</div></div>
+    </div>
+  </div>
+
+  <!-- ── PÁGINA: GLAI ─────────────────────────────── -->
+  <div id="pageGlai" class="page">
+    <div class="card">
+      <h2>🧠 Análisis GLAI — IA Autónoma</h2>
+      <div id="glaiAccessMsg" class="alert alert-orange" style="display:none">
+        🔒 Esta función es <strong>solo Premium</strong>. Contacta al administrador para obtener acceso.
+      </div>
+      <div id="glaiForm">
+        <div class="inputRow">
+          <div class="inputGroup">
+            <label>Equipo Local (A)</label>
+            <input id="teamA" placeholder="Ej: Manchester City" oninput="onTeamInput()"/>
+          </div>
+          <div class="inputGroup">
+            <label>Equipo Visitante (B)</label>
+            <input id="teamB" placeholder="Ej: Real Madrid" oninput="onTeamInput()"/>
+          </div>
+          <div class="inputGroup" style="max-width:140px">
+            <label>Liga</label>
+            <select id="leagueSel">
+              <option value="eng.1">Premier League</option>
+              <option value="esp.1">La Liga</option>
+              <option value="ger.1">Bundesliga</option>
+              <option value="ita.1">Serie A</option>
+              <option value="fra.1">Ligue 1</option>
+              <option value="por.1">Primeira Liga</option>
+              <option value="ned.1">Eredivisie</option>
+              <option value="mex.1">Liga MX</option>
+              <option value="usa.1">MLS</option>
+              <option value="arg.1">Liga Argentina</option>
+              <option value="bra.1">Brasileirão</option>
+              <option value="uefa.champions">UEFA Champions</option>
+              <option value="uefa.europa">UEFA Europa</option>
+              <option value="uefa.conference">UEFA Conference</option>
+              <option value="soccer">General</option>
+            </select>
+          </div>
+        </div>
+        <div class="inputRow">
+          <div class="inputGroup" style="max-width:140px">
+            <label>xG Local (A)</label>
+            <input id="xgA" type="number" min="0.1" max="5" step="0.1" value="1.4"/>
+          </div>
+          <div class="inputGroup" style="max-width:140px">
+            <label>xG Visitante (B)</label>
+            <input id="xgB" type="number" min="0.1" max="5" step="0.1" value="1.1"/>
+          </div>
+          <div style="align-self:flex-end">
+            <button class="btn btn-green" id="analyzeBtn" onclick="runGlai()" style="width:180px">🧠 Analizar con IA</button>
+          </div>
+        </div>
+        <div id="tokenWarn" class="alert alert-orange" style="display:none">⚠️ Sin tokens disponibles. Contacta al administrador.</div>
+      </div>
+    </div>
+
+    <div id="glaiResults" style="display:none">
+      <!-- Probabilidades 1X2 -->
+      <div class="card">
+        <h2>Probabilidades 1 X 2</h2>
+        <div class="probBar" id="probBar"></div>
+        <div class="xgRow" id="xgRow"></div>
+        <div class="miniStats" id="miniStats"></div>
+      </div>
+
+      <!-- Marcadores más probables -->
+      <div class="card">
+        <h2>Marcadores más probables</h2>
+        <div class="matrixGrid" id="matrixGrid"></div>
+      </div>
+
+      <!-- GLAI Apuesta IA -->
+      <div class="card" id="betCard">
+        <h2>🤖 GLAI — Apuesta Recomendada</h2>
+        <div id="betContent"></div>
+      </div>
+
+      <!-- Historial equipos -->
+      <div class="grid2">
+        <div class="card" id="histCardA">
+          <h2 id="histTitleA">Últimos 5 — Equipo A</h2>
+          <div id="histRowA" class="histRow"></div>
+          <div id="histDetailA"></div>
+        </div>
+        <div class="card" id="histCardB">
+          <h2 id="histTitleB">Últimos 5 — Equipo B</h2>
+          <div id="histRowB" class="histRow"></div>
+          <div id="histDetailB"></div>
+        </div>
+      </div>
+
+      <!-- Narrativa GLAI -->
+      <div class="card">
+        <h2>📝 Análisis Narrativo GLAI</h2>
+        <div class="narrative" id="narrative"></div>
+      </div>
+
+      <!-- Stats de liga -->
+      <div class="card" id="lgCard" style="display:none">
+        <h2>📈 Estadísticas de Liga (GLAI aprendió)</h2>
+        <div id="lgContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PÁGINA: ESTADÍSTICAS ─────────────────────── -->
+  <div id="pageStats" class="page">
+    <div class="card">
+      <div class="flex" style="margin-bottom:14px">
+        <h2 style="margin:0">📊 GLAI — Base de Conocimiento</h2>
+        <span class="ml-auto" id="scanStatusBadge"></span>
+      </div>
+      <div id="scanProgressArea" style="display:none">
+        <div class="progressWrap"><div class="progressBar" id="scanPBar" style="width:0%"></div></div>
+        <div class="scanMsg" id="scanMsg">Escaneando...</div>
+      </div>
+      <div class="statRow">
+        <span>Total de partidos aprendidos</span>
+        <strong id="statTotal" style="font-size:1.4rem;color:var(--green)">—</strong>
+      </div>
+      <div class="statRow">
+        <span>Último scan autónomo</span>
+        <span id="statLastScan" style="color:var(--muted)">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Por Liga</h2>
+      <div id="lgStatsList"></div>
+    </div>
+  </div>
+
+  <!-- ── PÁGINA: ADMIN ─────────────────────────────── -->
+  <div id="pageAdmin" class="page">
+    <!-- Scan manual -->
+    <div class="card">
+      <h2>🔄 Scan Manual GLAI</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:12px">
+        GLAI aprende sola cada 2 horas vía APScheduler. También puedes forzar un scan histórico:
+      </p>
+      <div class="flex" style="gap:10px;flex-wrap:wrap">
+        <input id="scanDays" type="number" value="30" min="1" max="365" style="width:80px;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px"/>
+        <label style="color:var(--muted);align-self:center;font-size:.85rem">días atrás</label>
+        <button class="btn btn-blue btn-sm" onclick="triggerScan()">⚡ Iniciar Scan Histórico</button>
+        <button class="btn btn-sm" style="background:#333;color:#ccc" onclick="loadStats()">📊 Ver Estado</button>
+      </div>
+      <div id="scanResult" style="margin-top:10px"></div>
+    </div>
+
+    <!-- API Keys -->
+    <div class="card">
+      <h2>🔑 API Keys</h2>
+      <div id="keysList" style="margin-bottom:14px"></div>
+      <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <input id="keyName" placeholder="Nombre (ej: besoccer)" class="inputInline" style="width:160px"/>
+        <input id="keyVal" placeholder="Token / API Key" class="inputInline" style="flex:1;min-width:200px"/>
+        <button class="btn btn-sm btn-blue" onclick="saveKey()">💾 Guardar</button>
+      </div>
+      <div id="keyMsg" style="margin-top:8px"></div>
+    </div>
+
+    <!-- Gestión de usuarios -->
+    <div class="card">
+      <h2>👥 Usuarios</h2>
+      <div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <input id="newUser" placeholder="Usuario" class="inputInline"/>
+        <input id="newPass" placeholder="Contraseña" type="password" class="inputInline"/>
+        <select id="newRole" class="roleSelect">
+          <option value="free">free</option>
+          <option value="premium">premium</option>
+          <option value="admin">admin</option>
+        </select>
+        <input id="newToks" type="number" value="10" min="0" class="inputInline" style="width:80px" placeholder="Tokens"/>
+        <button class="btn btn-sm btn-green" onclick="createUser()">+ Crear</button>
+      </div>
+      <div id="userMsg" class="alert" style="display:none"></div>
+      <div style="overflow-x:auto">
+        <table class="userTable">
+          <thead><tr><th>Usuario</th><th>Rol</th><th>Tokens</th><th>Acciones</th></tr></thead>
+          <tbody id="userTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════
+// ESTADO GLOBAL
+// ════════════════════════════════════════════════════
+let currentUser = null;
+let allMatches = [];
+let statsInterval = null;
+let scanPollInterval = null;
+
+// ════════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════════
+async function apiFetch(path, opts = {}) {
+  const r = await fetch(path, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    ...opts,
+  });
+  return r;
+}
+
+async function checkSession() {
+  try {
+    const r = await apiFetch('/api/auth/me');
+    const d = await r.json();
+    if (d.user) {
+      currentUser = d.user;
+      showApp();
+    } else {
+      showLogin();
+    }
+  } catch {
+    showLogin();
+  }
+}
+
+async function doLogin() {
+  const username = document.getElementById('lUser').value.trim();
+  const password = document.getElementById('lPass').value.trim();
+  if (!username || !password) { setLoginErr('Completa usuario y contraseña'); return; }
+  setLoginErr('');
+  try {
+    const r = await apiFetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      currentUser = d.user;
+      showApp();
+    } else {
+      setLoginErr(d.error || 'Error de inicio de sesión');
+    }
+  } catch {
+    setLoginErr('Error de conexión con el servidor');
+  }
+}
+
+async function doLogout() {
+  await apiFetch('/api/auth/logout', { method: 'POST' });
+  currentUser = null;
+  clearInterval(statsInterval);
+  clearInterval(scanPollInterval);
+  showLogin();
+}
+
+function setLoginErr(msg) { document.getElementById('loginErr').textContent = msg; }
+
+function showLogin() {
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+
+function showApp() {
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  // Badge de rol
+  const badge = document.getElementById('userBadge');
+  badge.textContent = currentUser.username + ' · ' + currentUser.role.toUpperCase();
+  badge.className = 'badge badge-' + currentUser.role;
+
+  // Tokens (premium)
+  const tokD = document.getElementById('tokDisplay');
+  if (currentUser.role === 'premium') {
+    tokD.style.display = '';
+    tokD.textContent = '🪙 ' + (currentUser.tokens || 0) + ' tokens';
+  } else {
+    tokD.style.display = 'none';
+  }
+
+  // Admin tab
+  document.getElementById('navAdmin').style.display =
+    currentUser.role === 'admin' ? '' : 'none';
+
+  // GLAI access message
+  const msg = document.getElementById('glaiAccessMsg');
+  const form = document.getElementById('glaiForm');
+  if (currentUser.role === 'free') {
+    msg.style.display = '';
+    form.style.opacity = '0.4';
+    form.style.pointerEvents = 'none';
+  } else {
+    msg.style.display = 'none';
+    form.style.opacity = '';
+    form.style.pointerEvents = '';
+  }
+
+  loadMatches();
+  loadStats();
+  if (currentUser.role === 'admin') { loadUsers(); loadKeys(); }
+  startStatsPoll();
+}
+
+// ════════════════════════════════════════════════════
+// NAVEGACIÓN
+// ════════════════════════════════════════════════════
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page' + id.charAt(0).toUpperCase() + id.slice(1)).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ════════════════════════════════════════════════════
+// PARTIDOS
+// ════════════════════════════════════════════════════
+async function loadMatches() {
+  const el = document.getElementById('matchList');
+  el.innerHTML = '<div class="alert alert-blue">⏳ Cargando partidos...</div>';
+  try {
+    const r = await apiFetch('/api/matches');
+    if (r.status === 401) { showLogin(); return; }
+    const d = await r.json();
+    allMatches = d.matches || [];
+    renderMatches(allMatches);
+  } catch (e) {
+    el.innerHTML = '<div class="alert alert-red">❌ Error: ' + e.message + '</div>';
+  }
+}
+
+function filterMatches() {
+  const q = document.getElementById('matchFilter').value.toLowerCase();
+  renderMatches(q ? allMatches.filter(m =>
+    m.homeTeam.toLowerCase().includes(q) ||
+    m.awayTeam.toLowerCase().includes(q) ||
+    m.league.toLowerCase().includes(q)
+  ) : allMatches);
+}
+
+const LEAGUE_NAMES = {
+  'eng.1':'Premier League','esp.1':'La Liga','ger.1':'Bundesliga','ita.1':'Serie A',
+  'fra.1':'Ligue 1','por.1':'Primeira Liga','ned.1':'Eredivisie','bel.1':'Jupiler',
+  'tur.1':'Süper Lig','sco.1':'Scottish Prem','mex.1':'Liga MX','usa.1':'MLS',
+  'arg.1':'Liga Arg','bra.1':'Brasileirão','col.1':'Liga Betplay','chi.1':'Primera Chile',
+  'aut.1':'Bundesliga AT','gre.1':'Super League GR',
+  'uefa.champions':'UEFA Champions','uefa.europa':'UEFA Europa','uefa.conference':'UEFA Conference',
+  'concacaf.champions':'CONCACAF CL','concacaf.league':'CONCACAF Liga',
+};
+
+function renderMatches(list) {
+  const el = document.getElementById('matchList');
+  if (!list.length) { el.innerHTML = '<div class="alert alert-blue">📭 No hay partidos disponibles ahora.</div>'; return; }
+  const byLeague = {};
+  list.forEach(m => { (byLeague[m.league] = byLeague[m.league] || []).push(m); });
+  el.innerHTML = Object.entries(byLeague).map(([lg, ms]) => `
+    <div style="margin-bottom:14px">
+      <div style="font-size:.75rem;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:6px">
+        ${LEAGUE_NAMES[lg] || lg.toUpperCase()}
+      </div>
+      ${ms.map(m => matchCard(m, lg)).join('')}
+    </div>
+  `).join('');
+}
+
+function matchCard(m, lg) {
+  const isLive = m.status.toLowerCase().includes('progress') || m.status.toLowerCase().includes('live');
+  const isFinal = m.status.toLowerCase().includes('final') || m.status.toLowerCase().includes('end');
+  const statusClass = isLive ? 'statusLive' : (isFinal ? 'statusFinal' : 'statusPre');
+  const statusLabel = isLive ? '🔴 EN VIVO' : (isFinal ? 'Final' : '🗓 Próximo');
+  const score = (m.homeScore !== '' && m.awayScore !== '')
+    ? `<span class="score">${m.homeScore} - ${m.awayScore}</span>`
+    : `<span class="score" style="color:var(--muted)"> vs </span>`;
+  return `
+    <div class="matchCard" onclick="openMatchGlai('${m.homeTeam}','${m.awayTeam}','${lg}')">
+      <div class="matchHeader">
+        <span class="statusPill ${statusClass}">${statusLabel}</span>
+        <span style="font-size:.75rem;color:var(--muted);margin-left:auto">${formatDate(m.date)}</span>
+      </div>
+      <div class="matchTeams">
+        <img src="${m.homeLogo}" onerror="this.src=''" style="width:28px;height:28px;object-fit:contain"/>
+        <span style="flex:1;text-align:right">${m.homeTeam}</span>
+        ${score}
+        <span style="flex:1">${m.awayTeam}</span>
+        <img src="${m.awayLogo}" onerror="this.src=''" style="width:28px;height:28px;object-fit:contain"/>
+      </div>
+    </div>`;
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  try {
+    return new Date(d).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+}
+
+function openMatchGlai(teamA, teamB, league) {
+  document.getElementById('teamA').value = teamA;
+  document.getElementById('teamB').value = teamB;
+  const sel = document.getElementById('leagueSel');
+  [...sel.options].forEach(o => { if (o.value === league) sel.value = league; });
+  showPage('glai');
+  document.querySelectorAll('nav button').forEach((b,i) => {
+    b.classList.toggle('active', i === 1);
+  });
+  if (currentUser && currentUser.role !== 'free') runGlai();
+}
+
+// ════════════════════════════════════════════════════
+// GLAI ANÁLISIS
+// ════════════════════════════════════════════════════
+function onTeamInput() {
+  document.getElementById('glaiResults').style.display = 'none';
+}
+
+async function runGlai() {
+  if (!currentUser || currentUser.role === 'free') return;
+  const teamA = document.getElementById('teamA').value.trim();
+  const teamB = document.getElementById('teamB').value.trim();
+  const league = document.getElementById('leagueSel').value;
+  const xgA = parseFloat(document.getElementById('xgA').value) || 1.4;
+  const xgB = parseFloat(document.getElementById('xgB').value) || 1.1;
+
+  if (!teamA || !teamB) {
+    document.getElementById('tokenWarn').style.display = 'none';
+    alert('Ingresa los nombres de ambos equipos');
+    return;
+  }
+
+  const btn = document.getElementById('analyzeBtn');
+  btn.innerHTML = '<span class="spinner"></span> Analizando...';
+  btn.disabled = true;
+  document.getElementById('glaiResults').style.display = 'none';
+  document.getElementById('tokenWarn').style.display = 'none';
+
+  try {
+    const r = await apiFetch('/api/glai/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ teamA, teamB, league, xgA, xgB }),
+    });
+    const d = await r.json();
+
+    if (r.status === 403) {
+      if (d.error === 'no_tokens') {
+        document.getElementById('tokenWarn').style.display = '';
+      } else {
+        document.getElementById('glaiAccessMsg').style.display = '';
+      }
+      return;
+    }
+    if (!r.ok) { alert(d.error || 'Error al analizar'); return; }
+
+    // Actualizar tokens en header
+    if (d.tokensLeft >= 0) {
+      currentUser.tokens = d.tokensLeft;
+      document.getElementById('tokDisplay').textContent = '🪙 ' + d.tokensLeft + ' tokens';
+    }
+
+    renderGlai(d, teamA, teamB);
+  } catch (e) {
+    alert('Error de conexión: ' + e.message);
+  } finally {
+    btn.innerHTML = '🧠 Analizar con IA';
+    btn.disabled = false;
+  }
+}
+
+function renderGlai(d, teamA, teamB) {
+  const pred = d.prediction || {};
+  const bet  = d.bet || {};
+  const histA = d.histA || [];
+  const histB = d.histB || [];
+  const lg   = d.lgStats || pred.lgStats || null;
+
+  document.getElementById('glaiResults').style.display = '';
+
+  // ── Barra 1X2 ──────────────────────────────────
+  const pA = pred.pctA || 0, pD = pred.pctD || 0, pB = pred.pctB || 0;
+  document.getElementById('probBar').innerHTML = `
+    <div class="probSeg probA" style="width:${pA}%">${pA>8?pA+'%':''}<span style="font-size:.65rem;opacity:.8">${pA>8?teamA:''}</span></div>
+    <div class="probSeg probD" style="width:${pD}%">${pD>8?pD+'%':''}<span style="font-size:.65rem;opacity:.8">${pD>8?'EMPATE':''}</span></div>
+    <div class="probSeg probB" style="width:${pB}%">${pB>8?pB+'%':''}<span style="font-size:.65rem;opacity:.8">${pB>8?teamB:''}</span></div>`;
+
+  // ── xG cards ───────────────────────────────────
+  document.getElementById('xgRow').innerHTML = `
+    <div class="xgCard"><div class="xgVal">${pred.xgA||'?'}</div><div class="xgLbl">xG — ${teamA}</div></div>
+    <div class="xgCard"><div class="xgVal" style="color:var(--orange)">${pred.xgB||'?'}</div><div class="xgLbl">xG — ${teamB}</div></div>
+    <div class="xgCard"><div class="xgVal" style="color:var(--purple)">${pred.btts||0}%</div><div class="xgLbl">Ambos Anotan</div></div>
+    <div class="xgCard"><div class="xgVal" style="color:var(--green)">${pred.over25||0}%</div><div class="xgLbl">Más de 2.5</div></div>`;
+
+  // ── Mini stats ──────────────────────────────────
+  const winning = pA > pB && pA > pD ? teamA : (pB > pA && pB > pD ? teamB : 'EMPATE');
+  const winPct  = Math.max(pA, pD, pB);
+  document.getElementById('miniStats').innerHTML = `
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--green)">${winning}</div><div class="miniStatLbl">Favorito</div></div>
+    <div class="miniStat"><div class="miniStatVal">${winPct}%</div><div class="miniStatLbl">Confianza</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--gold)">${d.total||0}</div><div class="miniStatLbl">Partidos GLAI aprendió</div></div>`;
+
+  // ── Matriz marcadores ───────────────────────────
+  const matrix = (pred.matrix || []).slice(0, 10);
+  document.getElementById('matrixGrid').innerHTML = matrix.map((c, i) => `
+    <div class="mCell ${i < 3 ? 'top' : ''}">
+      <div class="mCellScore">${c.a} - ${c.b}</div>
+      <div class="mCellPct">${(c.p * 100).toFixed(1)}%</div>
+    </div>`).join('');
+
+  // ── Apuesta IA ──────────────────────────────────
+  const best = bet.best;
+  const alt  = bet.alt;
+  let betHtml = '';
+  if (best) {
+    betHtml += `
+      <div class="betBlock">
+        <div class="betTitle">⭐ APUESTA PRINCIPAL</div>
+        <div class="betMain">${best.bet}</div>
+        <div class="betConf">
+          <div class="confBar"><div class="confFill" style="width:${best.conf}%"></div></div>
+          <span style="font-size:.9rem;font-weight:700;color:var(--green)">${best.conf}%</span>
+        </div>
+        <div class="betReason">${best.reason}</div>
+      </div>`;
+  }
+  if (alt) {
+    betHtml += `
+      <div class="betBlock" style="border-color:#ff980055;background:linear-gradient(135deg,#1a1200,#1a0d00)">
+        <div class="betTitle" style="color:var(--orange)">🔄 ALTERNATIVA</div>
+        <div class="betMain" style="color:var(--orange)">${alt.bet}</div>
+        <div class="betConf">
+          <div class="confBar"><div class="confFill" style="width:${alt.conf}%;background:linear-gradient(90deg,var(--orange),var(--gold))"></div></div>
+          <span style="font-size:.9rem;font-weight:700;color:var(--orange)">${alt.conf}%</span>
+        </div>
+        <div class="betReason">${alt.reason}</div>
+      </div>`;
+  }
+  betHtml += `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+      ${bet.hasRealData ? '<span class="tag tag-green">✅ Datos reales</span>' : '<span class="tag tag-orange">⚠️ Sin historial real</span>'}
+      <span class="tag tag-blue">xG cruzado: ${bet.crossXgA||'?'} - ${bet.crossXgB||'?'}</span>
+      <span class="tag tag-purple">BTTS real: ${bet.btts||0}%</span>
+      <span class="tag tag-orange">+2.5 real: ${bet.over25||0}%</span>
+    </div>`;
+  document.getElementById('betContent').innerHTML = betHtml;
+
+  // ── Historial equipos ───────────────────────────
+  renderHistory('A', histA, teamA, pred.xgA);
+  renderHistory('B', histB, teamB, pred.xgB);
+
+  // ── Narrativa ───────────────────────────────────
+  document.getElementById('narrative').textContent = buildNarrative(teamA, teamB, pred, bet, histA, histB, lg);
+
+  // ── Stats de liga ───────────────────────────────
+  if (lg && lg.n >= 5) {
+    document.getElementById('lgCard').style.display = '';
+    document.getElementById('lgContent').innerHTML = `
+      <div class="statRow"><span>Partidos analizados</span><strong>${lg.n}</strong></div>
+      <div class="statRow"><span>Goles local (promedio)</span><strong>${(lg.avgHG||0).toFixed(2)}</strong></div>
+      <div class="statRow"><span>Goles visitante (promedio)</span><strong>${(lg.avgAG||0).toFixed(2)}</strong></div>
+      <div class="statRow"><span>Victorias local</span><strong>${((lg.homeWinRate||0)*100).toFixed(0)}%</strong></div>
+      <div class="statRow"><span>Empates</span><strong>${((lg.drawRate||0)*100).toFixed(0)}%</strong></div>
+      <div class="statRow"><span>Victorias visitante</span><strong>${((lg.awayWinRate||0)*100).toFixed(0)}%</strong></div>`;
+  } else {
+    document.getElementById('lgCard').style.display = 'none';
+  }
+}
+
+function renderHistory(side, hist, teamName, xg) {
+  document.getElementById('histTitle' + side).textContent = `Últimos ${hist.length} — ${teamName}`;
+  const ballsEl = document.getElementById('histRow' + side);
+  const detailEl = document.getElementById('histDetail' + side);
+
+  if (!hist.length) {
+    ballsEl.innerHTML = '<span style="color:var(--muted);font-size:.85rem">Sin datos disponibles</span>';
+    detailEl.innerHTML = '';
+    return;
+  }
+
+  ballsEl.innerHTML = hist.map(h => `
+    <div class="histBall hist${h.result}" title="${h.opp} ${h.myG}-${h.oppG}">
+      <span>${h.myG}-${h.oppG}</span>
+      <span>${h.result}</span>
+    </div>`).join('');
+
+  // Resumen numérico
+  const wins = hist.filter(h => h.result === 'G').length;
+  const draws = hist.filter(h => h.result === 'E').length;
+  const losses = hist.filter(h => h.result === 'P').length;
+  const avgScored = (hist.reduce((a, h) => a + h.myG, 0) / hist.length).toFixed(1);
+  const avgConced = (hist.reduce((a, h) => a + h.oppG, 0) / hist.length).toFixed(1);
+
+  detailEl.innerHTML = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <span class="tag tag-green">G: ${wins}</span>
+      <span class="tag" style="background:#37474f1a;color:#78909c;border:1px solid #78909c66">E: ${draws}</span>
+      <span class="tag" style="background:#b71c1c1a;color:#ef5350;border:1px solid #ef535066">P: ${losses}</span>
+      <span class="tag tag-blue">⚽ ${avgScored} anotados</span>
+      <span class="tag tag-orange">🥅 ${avgConced} recibidos</span>
+    </div>
+    <div style="margin-top:8px;font-size:.78rem;color:var(--muted)">
+      ${hist.map(h => `${h.isHome ? '🏠' : '✈️'} vs ${h.opp||'?'} — <strong style="color:${h.result==='G'?'#4caf50':h.result==='E'?'#78909c':'#ef5350'}">${h.myG}-${h.oppG}</strong> ${h.comp||''} ${h.date||''}`).join('<br/>')}
+    </div>`;
+}
+
+function buildNarrative(tA, tB, pred, bet, hA, hB, lg) {
+  const pA = pred.pctA || 0, pD = pred.pctD || 0, pB = pred.pctB || 0;
+  const winner = pA > pB && pA > pD ? tA : (pB > pA && pB > pD ? tB : 'un empate');
+  const lines = [];
+  lines.push(`🧠 GLAI analizó el enfrentamiento entre ${tA} y ${tB}.`);
+  lines.push(`El modelo Poisson calibrado otorga ${pA}% al triunfo de ${tA}, ${pD}% al empate y ${pB}% al triunfo de ${tB}, apuntando a ${winner} como desenlace más probable.`);
+  lines.push(`Se estima un xG de ${pred.xgA} para ${tA} y ${pred.xgB} para ${tB}, con un ${pred.btts}% de probabilidad de que ambos equipos anoten y un ${pred.over25}% de que el partido supere los 2.5 goles.`);
+  if (hA.length >= 2) {
+    const wA = hA.filter(h => h.result === 'G').length;
+    lines.push(`${tA} acumula ${wA}/${hA.length} victorias en sus últimos partidos.`);
+  }
+  if (hB.length >= 2) {
+    const wB = hB.filter(h => h.result === 'G').length;
+    lines.push(`${tB} cuenta con ${wB}/${hB.length} victorias recientes.`);
+  }
+  if (bet.best) lines.push(`La apuesta con mayor confianza según GLAI es "${bet.best.bet}" (${bet.best.conf}%): ${bet.best.reason}.`);
+  if (lg && lg.n >= 10) {
+    lines.push(`La liga tiene un promedio de ${(lg.avgHG||0).toFixed(2)}-${(lg.avgAG||0).toFixed(2)} goles según los ${lg.n} partidos aprendidos por GLAI.`);
+  }
+  lines.push(`ℹ️ Este análisis es orientativo y no garantiza resultados. Apuesta con responsabilidad.`);
+  return lines.join('\n\n');
+}
+
+// ════════════════════════════════════════════════════
+// ESTADÍSTICAS
+// ════════════════════════════════════════════════════
+async function loadStats() {
+  try {
+    const [statusR, statsR] = await Promise.all([
+      apiFetch('/api/glai/status'),
+      apiFetch('/api/glai/stats'),
+    ]);
+    const status = await statusR.json();
+    const stats  = await statsR.json();
+
+    document.getElementById('statTotal').textContent = (stats.total || 0).toLocaleString();
+    document.getElementById('statLastScan').textContent = stats.lastScan
+      ? new Date(stats.lastScan).toLocaleString('es-MX')
+      : 'Nunca';
+
+    // Scan progress
+    const prog = status.progress || {};
+    const scanArea = document.getElementById('scanProgressArea');
+    const badge = document.getElementById('scanStatusBadge');
+    if (status.running) {
+      scanArea.style.display = '';
+      document.getElementById('scanPBar').style.width = prog.pct + '%';
+      document.getElementById('scanMsg').textContent = prog.msg || 'Escaneando...';
+      badge.innerHTML = '<span class="tag tag-green" style="animation:pulse 1s infinite">🔄 Aprendiendo...</span>';
+    } else {
+      scanArea.style.display = 'none';
+      badge.innerHTML = '<span class="tag tag-blue">✅ Autónomo (cada 2h)</span>';
+    }
+
+    // Por liga
+    const leagues = stats.byLeague || [];
+    const maxN = Math.max(...leagues.map(l => l.n || 0), 1);
+    document.getElementById('lgStatsList').innerHTML = leagues.length
+      ? leagues.sort((a,b) => (b.n||0)-(a.n||0)).map(l => `
+          <div class="statRow">
+            <span>${LEAGUE_NAMES[l.league_id] || l.league_id}</span>
+            <div style="flex:1;margin:0 12px">
+              <div class="progressWrap" style="height:6px">
+                <div class="leagueBar" style="width:${((l.n||0)/maxN*100).toFixed(0)}%"></div>
+              </div>
+            </div>
+            <span style="color:var(--muted);font-size:.85rem">${l.n} partidos</span>
+          </div>`).join('')
+      : '<div style="color:var(--muted);font-size:.85rem;padding:10px 0">Sin datos todavía — espera el primer scan autónomo (cada 2 horas)</div>';
+  } catch {}
+}
+
+function startStatsPoll() {
+  clearInterval(statsInterval);
+  statsInterval = setInterval(loadStats, 15000);
+}
+
+// ════════════════════════════════════════════════════
+// ADMIN — SCAN
+// ════════════════════════════════════════════════════
+async function triggerScan() {
+  const days = parseInt(document.getElementById('scanDays').value) || 30;
+  const r = await apiFetch('/api/admin/scan', {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+  });
+  const d = await r.json();
+  const el = document.getElementById('scanResult');
+  el.innerHTML = `<div class="alert ${d.ok ? 'alert-green' : 'alert-orange'}">${d.msg || d.error}</div>`;
+  if (d.ok) loadStats();
+}
+
+// ════════════════════════════════════════════════════
+// ADMIN — API KEYS
+// ════════════════════════════════════════════════════
+async function loadKeys() {
+  const r = await apiFetch('/api/keys');
+  if (!r.ok) return;
+  const d = await r.json();
+  const keys = d.keys || {};
+  const el = document.getElementById('keysList');
+  if (!Object.keys(keys).length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.85rem">No hay keys guardadas aún.</div>';
+    return;
+  }
+  el.innerHTML = Object.entries(keys).map(([k, v]) => `
+    <div class="statRow">
+      <span class="tag tag-purple">${k}</span>
+      <code style="color:var(--muted);font-size:.8rem">${v}</code>
+    </div>`).join('');
+}
+
+async function saveKey() {
+  const name  = document.getElementById('keyName').value.trim();
+  const value = document.getElementById('keyVal').value.trim();
+  if (!name || !value) { showKeyMsg('Nombre y valor requeridos', false); return; }
+  const r = await apiFetch('/api/keys', { method: 'POST', body: JSON.stringify({ name, value }) });
+  const d = await r.json();
+  showKeyMsg(d.msg || d.error, d.ok);
+  if (d.ok) { document.getElementById('keyName').value = ''; document.getElementById('keyVal').value = ''; loadKeys(); }
+}
+
+function showKeyMsg(msg, ok) {
+  const el = document.getElementById('keyMsg');
+  el.innerHTML = `<div class="alert ${ok ? 'alert-green' : 'alert-red'}">${msg}</div>`;
+  setTimeout(() => el.innerHTML = '', 3000);
+}
+
+// ════════════════════════════════════════════════════
+// ADMIN — USUARIOS
+// ════════════════════════════════════════════════════
+async function loadUsers() {
+  const r = await apiFetch('/api/admin/users');
+  if (!r.ok) return;
+  const d = await r.json();
+  const tbody = document.getElementById('userTableBody');
+  tbody.innerHTML = (d.users || []).map(u => `
+    <tr>
+      <td><strong>${u.username}</strong></td>
+      <td>
+        <select class="roleSelect" onchange="changeRole('${u.username}', this.value)">
+          ${['free','premium','admin'].map(role =>
+            `<option value="${role}" ${u.role===role?'selected':''}>${role}</option>`
+          ).join('')}
+        </select>
+      </td>
+      <td>
+        ${u.tokens === -1
+          ? '<span class="tag tag-purple">∞ ilimitado</span>'
+          : `<span>${u.tokens}</span> <input type="number" class="inputInline" id="tok_${u.username}" style="width:70px;margin-left:6px" value="10" min="1"/>
+             <button class="btn btn-sm btn-orange" onclick="grantTokens('${u.username}')" style="margin-left:4px">+</button>`}
+      </td>
+      <td>
+        ${u.username !== currentUser.username
+          ? `<button class="btn btn-sm btn-red" onclick="deleteUser('${u.username}')">🗑 Borrar</button>`
+          : '<span style="color:var(--muted)">—</span>'}
+      </td>
+    </tr>`).join('');
+}
+
+async function createUser() {
+  const username = document.getElementById('newUser').value.trim();
+  const password = document.getElementById('newPass').value.trim();
+  const role     = document.getElementById('newRole').value;
+  const tokens   = parseInt(document.getElementById('newToks').value) || 10;
+  if (!username || !password) { showUserMsg('Completa usuario y contraseña', false); return; }
+  const r = await apiFetch('/api/admin/users', {
+    method: 'POST',
+    body: JSON.stringify({ username, password, role, tokens }),
+  });
+  const d = await r.json();
+  showUserMsg(d.ok ? `Usuario "${username}" creado` : (d.error || 'Error'), d.ok);
+  if (d.ok) { document.getElementById('newUser').value = ''; document.getElementById('newPass').value = ''; loadUsers(); }
+}
+
+async function changeRole(username, role) {
+  await apiFetch(`/api/admin/users/${username}/role`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  });
+  loadUsers();
+}
+
+async function grantTokens(username) {
+  const amount = parseInt(document.getElementById('tok_' + username).value) || 10;
+  const r = await apiFetch(`/api/admin/users/${username}/tokens`, {
+    method: 'PATCH',
+    body: JSON.stringify({ amount }),
+  });
+  const d = await r.json();
+  showUserMsg(d.ok ? `${amount} tokens agregados a ${username}` : (d.error || 'Error'), d.ok);
+  loadUsers();
+}
+
+async function deleteUser(username) {
+  if (!confirm(`¿Borrar usuario "${username}"?`)) return;
+  const r = await apiFetch(`/api/admin/users/${username}`, { method: 'DELETE' });
+  const d = await r.json();
+  showUserMsg(d.ok ? `Usuario "${username}" eliminado` : (d.error || 'Error'), d.ok);
+  if (d.ok) loadUsers();
+}
+
+function showUserMsg(msg, ok) {
+  const el = document.getElementById('userMsg');
+  el.style.display = '';
+  el.className = 'alert ' + (ok ? 'alert-green' : 'alert-red');
+  el.textContent = msg;
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+// ════════════════════════════════════════════════════
+// INICIO
+// ════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('loginWrap').style.display !== 'none') doLogin();
+});
+checkSession();
+</script>
+</body>
+</html>
