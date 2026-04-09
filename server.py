@@ -140,11 +140,12 @@ def change_password():
 @require_login
 def matches():
     try:
-        data = espn.get_today_matches()
-        # Agregar fixtures futuros de ResultadosFutbol (próximos días)
+        # Soccer + NBA + MLB de ESPN
+        data = espn.get_all_today()
+
+        # Agregar fixtures futuros (soccer de TheSportsDB/FootballData)
         fixtures = glai.get_fixtures()
         if fixtures:
-            # Evitar duplicados por nombre de equipo
             existing = {(m['homeTeam'], m['awayTeam']) for m in data}
             for f in fixtures:
                 key = (f.get('homeTeam',''), f.get('awayTeam',''))
@@ -154,12 +155,12 @@ def matches():
                         'awayTeam':  f.get('awayTeam', ''),
                         'homeScore': '',
                         'awayScore': '',
-                        'homeLogo':  '',
-                        'awayLogo':  '',
+                        'homeLogo':  f.get('homeLogo', ''),
+                        'awayLogo':  f.get('awayLogo', ''),
                         'status':    'pre',
                         'date':      f.get('date', ''),
                         'league':    f.get('league', 'soccer'),
-                        'source':    'resultadosfutbol',
+                        'sport':     'soccer',
                     })
                     existing.add(key)
         return jsonify({'matches': data, 'total': len(data)})
