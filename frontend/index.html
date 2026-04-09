@@ -158,6 +158,29 @@ nav button.active{font-weight:700}
 .alert-green{background:#1b5e2022;border:1px solid #4caf5044;color:#a5d6a7}
 .alert-blue{background:#0d213722;border:1px solid #2196f344;color:#90caf9}
 .alert-orange{background:#33200022;border:1px solid #ff980044;color:#ffcc80}
+
+/* ── SPORT SELECTOR ──────────────────────────────── */
+.sportBtnRow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.sportBtn{background:#0d1117;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:8px 18px;font-size:.9rem;font-weight:700;cursor:pointer;transition:.2s}
+.sportBtn.active{border-color:var(--blue);color:var(--text);background:#0d2137}
+.sportBtn:hover{border-color:var(--blue);color:var(--text)}
+
+/* ── QUARTER / INNING TABLE ──────────────────────── */
+.periodTable{width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:14px}
+.periodTable th{background:#0d1117;color:var(--muted);padding:8px 10px;text-align:center;font-weight:700;border-bottom:1px solid var(--border)}
+.periodTable td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--border)30}
+.periodTable tr:last-child td{border-bottom:none}
+.periodTable tr:hover td{background:#1a2436}
+.periodTable .pHome{color:var(--blue);font-weight:700}
+.periodTable .pAway{color:var(--red);font-weight:700}
+.periodTable .pTotal{color:var(--green);font-weight:700}
+.periodTable .pOu{color:var(--muted);font-size:.8rem}
+
+/* ── NBA/MLB cards ───────────────────────────────── */
+.sportCard{background:linear-gradient(135deg,#0d1a2d,#0d2137);border:1px solid #2196f333;border-radius:10px;padding:14px;text-align:center;flex:1;min-width:120px}
+.sportCardVal{font-size:1.9rem;font-weight:900}
+.sportCardLbl{font-size:.72rem;color:var(--muted);margin-top:3px}
+.firstInningBox{background:linear-gradient(135deg,#1a0d2d,#0d1a2d);border:1px solid #9c27b033;border-radius:12px;padding:16px;margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -220,16 +243,22 @@ nav button.active{font-weight:700}
         🔒 Esta función es <strong>solo Premium</strong>. Contacta al administrador para obtener acceso.
       </div>
       <div id="glaiForm">
+        <!-- Sport selector -->
+        <div class="sportBtnRow">
+          <button class="sportBtn active" id="sbSoccer" onclick="setGlaiSport('soccer',this)">⚽ Soccer</button>
+          <button class="sportBtn" id="sbNba" onclick="setGlaiSport('nba',this)">🏀 NBA</button>
+          <button class="sportBtn" id="sbMlb" onclick="setGlaiSport('mlb',this)">⚾ MLB</button>
+        </div>
         <div class="inputRow">
           <div class="inputGroup">
-            <label>Equipo Local (A)</label>
+            <label id="lblTeamA">Equipo Local (A)</label>
             <input id="teamA" placeholder="Ej: Manchester City" oninput="onTeamInput()"/>
           </div>
           <div class="inputGroup">
-            <label>Equipo Visitante (B)</label>
+            <label id="lblTeamB">Equipo Visitante (B)</label>
             <input id="teamB" placeholder="Ej: Real Madrid" oninput="onTeamInput()"/>
           </div>
-          <div class="inputGroup" style="max-width:140px">
+          <div class="inputGroup" style="max-width:140px" id="leagueGroup">
             <label>Liga</label>
             <select id="leagueSel">
               <option value="eng.1">Premier League</option>
@@ -251,13 +280,13 @@ nav button.active{font-weight:700}
           </div>
         </div>
         <div class="inputRow">
-          <div class="inputGroup" style="max-width:140px">
-            <label>xG Local (A)</label>
-            <input id="xgA" type="number" min="0.1" max="5" step="0.1" value="1.4"/>
+          <div class="inputGroup" style="max-width:160px">
+            <label id="lblValA">xG Local (A)</label>
+            <input id="xgA" type="number" min="0.1" max="999" step="0.1" value="1.4"/>
           </div>
-          <div class="inputGroup" style="max-width:140px">
-            <label>xG Visitante (B)</label>
-            <input id="xgB" type="number" min="0.1" max="5" step="0.1" value="1.1"/>
+          <div class="inputGroup" style="max-width:160px">
+            <label id="lblValB">xG Visitante (B)</label>
+            <input id="xgB" type="number" min="0.1" max="999" step="0.1" value="1.1"/>
           </div>
           <div style="align-self:flex-end">
             <button class="btn btn-green" id="analyzeBtn" onclick="runGlai()" style="width:180px">🧠 Analizar con IA</button>
@@ -438,6 +467,7 @@ let currentUser = null;
 let allMatches = [];
 let statsInterval = null;
 let scanPollInterval = null;
+let currentGlaiSport = 'soccer';
 
 // ════════════════════════════════════════════════════
 // AUTH
@@ -687,7 +717,7 @@ function matchCard(m, lg) {
     ? `<span class="score">${m.homeScore} - ${m.awayScore}</span>`
     : `<span class="score" style="color:var(--muted)"> vs </span>`;
   return `
-    <div class="matchCard" onclick="openMatchGlai('${m.homeTeam}','${m.awayTeam}','${lg}')">
+    <div class="matchCard" onclick="openMatchGlai('${m.homeTeam}','${m.awayTeam}','${lg}','${m.sport||'soccer'}')">
       <div class="matchHeader">
         <span class="statusPill ${statusClass}">${statusLabel}</span>
         <span style="font-size:.75rem;color:var(--muted);margin-left:auto">${formatFullDate(m.date)}</span>
@@ -718,11 +748,16 @@ function formatFullDate(d) {
   } catch { return ''; }
 }
 
-function openMatchGlai(teamA, teamB, league) {
+function openMatchGlai(teamA, teamB, league, sport) {
   document.getElementById('teamA').value = teamA;
   document.getElementById('teamB').value = teamB;
   const sel = document.getElementById('leagueSel');
   [...sel.options].forEach(o => { if (o.value === league) sel.value = league; });
+
+  // Set sport selector
+  const matchSport = sport || 'soccer';
+  const btnMap = { soccer: 'sbSoccer', nba: 'sbNba', mlb: 'sbMlb' };
+  setGlaiSport(matchSport, document.getElementById(btnMap[matchSport] || 'sbSoccer'));
 
   // Buscar si el partido está en vivo o próximo
   const anyMatch = allMatches.find(m =>
@@ -735,6 +770,50 @@ function openMatchGlai(teamA, teamB, league) {
     b.classList.toggle('active', i === 1);
   });
   if (currentUser && currentUser.role !== 'free') runGlai();
+}
+
+function setGlaiSport(sport, btn) {
+  currentGlaiSport = sport;
+  document.querySelectorAll('.sportBtn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('glaiResults').style.display = 'none';
+
+  const leagueGrp = document.getElementById('leagueGroup');
+  const lblA = document.getElementById('lblValA');
+  const lblB = document.getElementById('lblValB');
+  const xgA  = document.getElementById('xgA');
+  const xgB  = document.getElementById('xgB');
+  const tA   = document.getElementById('teamA');
+  const tB   = document.getElementById('teamB');
+
+  if (sport === 'nba') {
+    leagueGrp.style.display = 'none';
+    lblA.textContent = 'PPG Local (A)';
+    lblB.textContent = 'PPG Visitante (B)';
+    xgA.value = xgA.value < 10 ? '115.0' : xgA.value;
+    xgB.value = xgB.value < 10 ? '112.0' : xgB.value;
+    xgA.step = '0.5'; xgB.step = '0.5';
+    if (!tA.placeholder.includes('Lakers')) tA.placeholder = 'Ej: Los Angeles Lakers';
+    if (!tB.placeholder.includes('Warriors')) tB.placeholder = 'Ej: Golden State Warriors';
+  } else if (sport === 'mlb') {
+    leagueGrp.style.display = 'none';
+    lblA.textContent = 'Carreras/Juego (A)';
+    lblB.textContent = 'Carreras/Juego (B)';
+    xgA.value = xgA.value > 15 ? '4.5' : xgA.value;
+    xgB.value = xgB.value > 15 ? '4.2' : xgB.value;
+    xgA.step = '0.1'; xgB.step = '0.1';
+    if (!tA.placeholder.includes('Yankees')) tA.placeholder = 'Ej: New York Yankees';
+    if (!tB.placeholder.includes('Dodgers')) tB.placeholder = 'Ej: Los Angeles Dodgers';
+  } else {
+    leagueGrp.style.display = '';
+    lblA.textContent = 'xG Local (A)';
+    lblB.textContent = 'xG Visitante (B)';
+    xgA.value = xgA.value > 15 ? '1.4' : xgA.value;
+    xgB.value = xgB.value > 15 ? '1.1' : xgB.value;
+    xgA.step = '0.1'; xgB.step = '0.1';
+    tA.placeholder = 'Ej: Manchester City';
+    tB.placeholder = 'Ej: Real Madrid';
+  }
 }
 
 // ════════════════════════════════════════════════════
@@ -767,7 +846,7 @@ async function runGlai() {
   try {
     const r = await apiFetch('/api/glai/analyze', {
       method: 'POST',
-      body: JSON.stringify({ teamA, teamB, league, xgA, xgB }),
+      body: JSON.stringify({ teamA, teamB, league, xgA, xgB, sport: currentGlaiSport }),
     });
     const d = await r.json();
 
@@ -787,7 +866,10 @@ async function runGlai() {
       document.getElementById('tokDisplay').textContent = '🪙 ' + d.tokensLeft + ' tokens';
     }
 
-    renderGlai(d, teamA, teamB);
+    const sport = d.sport || currentGlaiSport;
+    if (sport === 'nba') renderGlaiNBA(d, teamA, teamB);
+    else if (sport === 'mlb') renderGlaiMLB(d, teamA, teamB);
+    else renderGlai(d, teamA, teamB);
   } catch (e) {
     alert('Error de conexión: ' + e.message);
   } finally {
@@ -804,6 +886,11 @@ function renderGlai(d, teamA, teamB) {
   const lg   = d.lgStats || pred.lgStats || null;
 
   document.getElementById('glaiResults').style.display = '';
+  // Restore soccer-only panels
+  document.getElementById('cornersCard').style.display = '';
+  document.getElementById('cardsCard').style.display = '';
+  document.getElementById('histCardA').style.display = '';
+  document.getElementById('histCardB').style.display = '';
 
   // ── Banner EN VIVO ──────────────────────────────
   const liveM = window._currentLiveMatch;
@@ -1061,6 +1148,280 @@ function buildNarrative(tA, tB, pred, bet, hA, hB, lg) {
   }
   lines.push(`ℹ️ Este análisis es orientativo y no garantiza resultados. Apuesta con responsabilidad.`);
   return lines.join('\n\n');
+}
+
+// ════════════════════════════════════════════════════
+// GLAI NBA
+// ════════════════════════════════════════════════════
+function renderGlaiNBA(d, teamA, teamB) {
+  const pred = d.prediction || {};
+  const bet  = d.bet  || {};
+  const pA   = pred.pctA || 0;
+  const pB   = pred.pctB || 0;
+
+  document.getElementById('glaiResults').style.display = '';
+
+  // Live banner
+  const liveM = window._currentLiveMatch;
+  const bannerEl = document.getElementById('liveMatchBanner');
+  if (liveM && liveM.homeScore !== '' && liveM.awayScore !== '') {
+    bannerEl.style.display = '';
+    bannerEl.innerHTML = `<div class="liveBanner">
+      <div class="livePulse"></div>
+      <div class="liveTeams">
+        <div style="font-size:.7rem;color:var(--red);font-weight:800;letter-spacing:1px;margin-bottom:4px">🏀 EN VIVO — NBA</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="text-align:right;flex:1"><div style="font-weight:700">${teamA}</div></div>
+          <div class="liveScore">${liveM.homeScore} - ${liveM.awayScore}</div>
+          <div style="flex:1"><div style="font-weight:700">${teamB}</div></div>
+        </div>
+      </div>
+      <div style="text-align:center"><div class="liveMinute">⏱ EN CURSO</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:6px">${formatFullDate(liveM.date)}</div></div>
+    </div>`;
+  } else if (liveM) {
+    bannerEl.style.display = '';
+    bannerEl.innerHTML = `<div class="upcomingBanner">
+      <span style="font-size:1.2rem">🏀</span>
+      <div><div style="font-size:.75rem;color:var(--green);font-weight:800;letter-spacing:1px">PRÓXIMO — NBA</div>
+        <div style="font-weight:700;margin-top:2px">${teamA} vs ${teamB}</div>
+        <div style="font-size:.82rem;color:var(--green);font-weight:600;margin-top:4px">📅 ${formatFullDate(liveM.date)}</div>
+      </div></div>`;
+  } else { bannerEl.style.display = 'none'; }
+
+  // Win probability bar
+  document.getElementById('probBar').innerHTML = `
+    <div class="probSeg probA" style="width:${pA}%">${pA>8?pA+'%':''}<span style="font-size:.65rem;opacity:.8">${pA>8?teamA:''}</span></div>
+    <div class="probSeg probB" style="width:${pB}%">${pB>8?pB+'%':''}<span style="font-size:.65rem;opacity:.8">${pB>8?teamB:''}</span></div>`;
+
+  // Stat cards
+  document.getElementById('xgRow').innerHTML = `
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--blue)">${pred.projHome||'?'}</div><div class="sportCardLbl">PPG Proyectado — ${teamA}</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--red)">${pred.projAway||'?'}</div><div class="sportCardLbl">PPG Proyectado — ${teamB}</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--green)">${pred.total||'?'}</div><div class="sportCardLbl">Total Proyectado</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--orange)">${pred.spread >= 0 ? '+' : ''}${pred.spread||0}</div><div class="sportCardLbl">Spread (${teamA})</div></div>`;
+
+  // Mini stats
+  document.getElementById('miniStats').innerHTML = `
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--green)">${pA >= pB ? teamA : teamB}</div><div class="miniStatLbl">Favorito</div></div>
+    <div class="miniStat"><div class="miniStatVal">${Math.max(pA, pB)}%</div><div class="miniStatLbl">Confianza</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--blue)">${pred.ouLine||'?'}</div><div class="miniStatLbl">O/U Línea</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--gold)">${pred.ouOver||0}%</div><div class="miniStatLbl">Over ${pred.ouLine||'?'}</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--gold)">${d.total||0}</div><div class="miniStatLbl">Partidos aprendidos</div></div>`;
+
+  // Quarter-by-quarter table (replaces matrix grid)
+  const quarters = pred.quarters || [];
+  document.getElementById('matrixGrid').outerHTML = `<div id="matrixGrid"></div>`;
+  document.getElementById('matrixGrid').innerHTML = `
+    <div style="font-size:.85rem;font-weight:700;color:var(--blue);margin-bottom:10px">📊 Proyección por Cuartos</div>
+    <table class="periodTable" style="margin-bottom:0">
+      <thead><tr>
+        <th>Cuarto</th>
+        <th style="color:var(--blue)">${teamA}</th>
+        <th style="color:var(--red)">${teamB}</th>
+        <th style="color:var(--green)">Total</th>
+        <th>O/U Línea</th>
+        <th>Over %</th>
+      </tr></thead>
+      <tbody>${quarters.map(q => `<tr>
+        <td style="font-weight:700;color:var(--muted)">Q${q.q}</td>
+        <td class="pHome">${q.home}</td>
+        <td class="pAway">${q.away}</td>
+        <td class="pTotal">${q.total}</td>
+        <td class="pOu">${q.ouLine}</td>
+        <td><span class="tag ${q.overPct>=55?'tag-green':'tag-orange'}">${q.overPct}%</span></td>
+      </tr>`).join('')}
+      <tr style="background:#0d1117">
+        <td style="font-weight:900;color:var(--text)">TOTAL</td>
+        <td class="pHome" style="font-size:1.1rem">${pred.projHome}</td>
+        <td class="pAway" style="font-size:1.1rem">${pred.projAway}</td>
+        <td class="pTotal" style="font-size:1.1rem">${pred.total}</td>
+        <td class="pOu">${pred.ouLine}</td>
+        <td><span class="tag ${(pred.ouOver||0)>=55?'tag-green':'tag-orange'}">${pred.ouOver||0}%</span></td>
+      </tr></tbody>
+    </table>`;
+
+  // Bet block
+  const best = bet.best, alt = bet.alt;
+  let betHtml = '';
+  if (best) betHtml += `<div class="betBlock">
+    <div class="betTitle">⭐ APUESTA PRINCIPAL — 🏀 NBA</div>
+    <div class="betMain">${best.bet}</div>
+    <div class="betConf"><div class="confBar"><div class="confFill" style="width:${best.conf}%"></div></div>
+      <span style="font-size:.9rem;font-weight:700;color:var(--green)">${best.conf}%</span></div>
+    <div class="betReason">${best.reason}</div></div>`;
+  if (alt) betHtml += `<div class="betBlock" style="border-color:#ff980055;background:linear-gradient(135deg,#1a1200,#1a0d00)">
+    <div class="betTitle" style="color:var(--orange)">🔄 ALTERNATIVA</div>
+    <div class="betMain" style="color:var(--orange)">${alt.bet}</div>
+    <div class="betConf"><div class="confBar"><div class="confFill" style="width:${alt.conf}%;background:linear-gradient(90deg,var(--orange),var(--gold))"></div></div>
+      <span style="font-size:.9rem;font-weight:700;color:var(--orange)">${alt.conf}%</span></div>
+    <div class="betReason">${alt.reason}</div></div>`;
+  document.getElementById('betContent').innerHTML = betHtml;
+
+  // Hide soccer-only panels
+  document.getElementById('cornersCard').style.display = 'none';
+  document.getElementById('cardsCard').style.display = 'none';
+  document.getElementById('histCardA').style.display = 'none';
+  document.getElementById('histCardB').style.display = 'none';
+  document.getElementById('lgCard').style.display = 'none';
+
+  // Narrative
+  document.getElementById('narrative').textContent = bet.narrative || '';
+}
+
+// ════════════════════════════════════════════════════
+// GLAI MLB
+// ════════════════════════════════════════════════════
+function renderGlaiMLB(d, teamA, teamB) {
+  const pred   = d.prediction || {};
+  const bet    = d.bet  || {};
+  const pA     = pred.pctA || 0;
+  const pB     = pred.pctB || 0;
+  const first  = pred.first || {};
+  const innings = pred.innings || [];
+  const matrix  = pred.matrix || [];
+
+  document.getElementById('glaiResults').style.display = '';
+
+  // Live banner
+  const liveM = window._currentLiveMatch;
+  const bannerEl = document.getElementById('liveMatchBanner');
+  if (liveM && liveM.homeScore !== '' && liveM.awayScore !== '') {
+    bannerEl.style.display = '';
+    bannerEl.innerHTML = `<div class="liveBanner">
+      <div class="livePulse"></div>
+      <div class="liveTeams">
+        <div style="font-size:.7rem;color:var(--red);font-weight:800;letter-spacing:1px;margin-bottom:4px">⚾ EN VIVO — MLB</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="text-align:right;flex:1"><div style="font-weight:700">${teamA}</div></div>
+          <div class="liveScore">${liveM.homeScore} - ${liveM.awayScore}</div>
+          <div style="flex:1"><div style="font-weight:700">${teamB}</div></div>
+        </div>
+      </div>
+      <div style="text-align:center"><div class="liveMinute">⏱ EN CURSO</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:6px">${formatFullDate(liveM.date)}</div></div>
+    </div>`;
+  } else if (liveM) {
+    bannerEl.style.display = '';
+    bannerEl.innerHTML = `<div class="upcomingBanner">
+      <span style="font-size:1.2rem">⚾</span>
+      <div><div style="font-size:.75rem;color:var(--green);font-weight:800;letter-spacing:1px">PRÓXIMO — MLB</div>
+        <div style="font-weight:700;margin-top:2px">${teamA} vs ${teamB}</div>
+        <div style="font-size:.82rem;color:var(--green);font-weight:600;margin-top:4px">📅 ${formatFullDate(liveM.date)}</div>
+      </div></div>`;
+  } else { bannerEl.style.display = 'none'; }
+
+  // Win probability bar
+  document.getElementById('probBar').innerHTML = `
+    <div class="probSeg probA" style="width:${pA}%">${pA>8?pA+'%':''}<span style="font-size:.65rem;opacity:.8">${pA>8?teamA:''}</span></div>
+    <div class="probSeg probB" style="width:${pB}%">${pB>8?pB+'%':''}<span style="font-size:.65rem;opacity:.8">${pB>8?teamB:''}</span></div>`;
+
+  // Stat cards
+  document.getElementById('xgRow').innerHTML = `
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--blue)">${pred.projHome||'?'}</div><div class="sportCardLbl">Carreras — ${teamA}</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--red)">${pred.projAway||'?'}</div><div class="sportCardLbl">Carreras — ${teamB}</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--green)">${pred.total||'?'}</div><div class="sportCardLbl">Total Proyectado</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--orange)">${pred.over4_5||0}%</div><div class="sportCardLbl">Over 4.5</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--purple)">${pred.over7_5||0}%</div><div class="sportCardLbl">Over 7.5</div></div>`;
+
+  // Mini stats
+  document.getElementById('miniStats').innerHTML = `
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--green)">${pA >= pB ? teamA : teamB}</div><div class="miniStatLbl">Favorito</div></div>
+    <div class="miniStat"><div class="miniStatVal">${Math.max(pA, pB)}%</div><div class="miniStatLbl">Confianza</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--gold)">${d.total||0}</div><div class="miniStatLbl">Partidos aprendidos</div></div>`;
+
+  // 1er Inning block + 9-inning table (replaces matrix)
+  document.getElementById('matrixGrid').outerHTML = `<div id="matrixGrid"></div>`;
+  document.getElementById('matrixGrid').innerHTML = `
+    <div class="firstInningBox">
+      <div style="font-size:.8rem;font-weight:800;color:#ce93d8;letter-spacing:1px;margin-bottom:10px">⚾ ANÁLISIS — 1er INNING</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="sportCard" style="background:linear-gradient(135deg,#1a0d2d,#0d1117)">
+          <div class="sportCardVal" style="color:#ce93d8">${first.projTotal||'?'}</div>
+          <div class="sportCardLbl">Carreras proyectadas</div>
+        </div>
+        <div class="sportCard" style="background:linear-gradient(135deg,#1a0d2d,#0d1117)">
+          <div class="sportCardVal" style="color:var(--green)">${first.scoreAny||0}%</div>
+          <div class="sportCardLbl">Alguien anota</div>
+        </div>
+        <div class="sportCard" style="background:linear-gradient(135deg,#1a0d2d,#0d1117)">
+          <div class="sportCardVal" style="color:var(--orange)">${first.over05||0}%</div>
+          <div class="sportCardLbl">Over 0.5 runs</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;text-align:center;background:#0d1117;border-radius:8px;padding:10px">
+          <div style="font-size:1.2rem;font-weight:900;color:var(--blue)">${first.projHome||'?'}</div>
+          <div style="font-size:.72rem;color:var(--muted)">${teamA}</div>
+        </div>
+        <div style="flex:1;text-align:center;background:#0d1117;border-radius:8px;padding:10px">
+          <div style="font-size:1.2rem;font-weight:900;color:var(--red)">${first.projAway||'?'}</div>
+          <div style="font-size:.72rem;color:var(--muted)">${teamB}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:.85rem;font-weight:700;color:var(--blue);margin-bottom:10px">📊 Proyección por Entrada (9 innings)</div>
+    <div style="overflow-x:auto">
+    <table class="periodTable">
+      <thead><tr>
+        <th>Entrada</th>
+        <th style="color:var(--blue)">${teamA}</th>
+        <th style="color:var(--red)">${teamB}</th>
+        <th style="color:var(--green)">Total</th>
+        <th>Score %</th>
+      </tr></thead>
+      <tbody>${innings.map(inn => `<tr>
+        <td style="font-weight:700;color:var(--muted)">${inn.inning}</td>
+        <td class="pHome">${inn.home}</td>
+        <td class="pAway">${inn.away}</td>
+        <td class="pTotal">${inn.total}</td>
+        <td><span class="tag ${inn.scorePct>=50?'tag-green':'tag-orange'}">${inn.scorePct}%</span></td>
+      </tr>`).join('')}
+      <tr style="background:#0d1117">
+        <td style="font-weight:900;color:var(--text)">TOTAL</td>
+        <td class="pHome" style="font-size:1.1rem">${pred.projHome}</td>
+        <td class="pAway" style="font-size:1.1rem">${pred.projAway}</td>
+        <td class="pTotal" style="font-size:1.1rem">${pred.total}</td>
+        <td></td>
+      </tr></tbody>
+    </table></div>
+
+    <div style="font-size:.85rem;font-weight:700;color:var(--blue);margin:14px 0 10px">🎯 Marcadores más probables</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">
+      ${matrix.slice(0,10).map((c,i) => `
+        <div class="mCell ${i<3?'top':''}">
+          <div class="mCellScore">${c.h} - ${c.a}</div>
+          <div class="mCellPct">${(c.p*100).toFixed(1)}%</div>
+        </div>`).join('')}
+    </div>`;
+
+  // Bet block
+  const best = bet.best, alt = bet.alt;
+  let betHtml = '';
+  if (best) betHtml += `<div class="betBlock">
+    <div class="betTitle">⭐ APUESTA PRINCIPAL — ⚾ MLB</div>
+    <div class="betMain">${best.bet}</div>
+    <div class="betConf"><div class="confBar"><div class="confFill" style="width:${best.conf}%"></div></div>
+      <span style="font-size:.9rem;font-weight:700;color:var(--green)">${best.conf}%</span></div>
+    <div class="betReason">${best.reason}</div></div>`;
+  if (alt) betHtml += `<div class="betBlock" style="border-color:#ff980055;background:linear-gradient(135deg,#1a1200,#1a0d00)">
+    <div class="betTitle" style="color:var(--orange)">🔄 ALTERNATIVA</div>
+    <div class="betMain" style="color:var(--orange)">${alt.bet}</div>
+    <div class="betConf"><div class="confBar"><div class="confFill" style="width:${alt.conf}%;background:linear-gradient(90deg,var(--orange),var(--gold))"></div></div>
+      <span style="font-size:.9rem;font-weight:700;color:var(--orange)">${alt.conf}%</span></div>
+    <div class="betReason">${alt.reason}</div></div>`;
+  document.getElementById('betContent').innerHTML = betHtml;
+
+  // Hide soccer-only panels
+  document.getElementById('cornersCard').style.display = 'none';
+  document.getElementById('cardsCard').style.display = 'none';
+  document.getElementById('histCardA').style.display = 'none';
+  document.getElementById('histCardB').style.display = 'none';
+  document.getElementById('lgCard').style.display = 'none';
+
+  // Narrative
+  document.getElementById('narrative').textContent = bet.narrative || '';
 }
 
 // ════════════════════════════════════════════════════
