@@ -230,6 +230,13 @@ nav button.active{font-weight:700}
           <span id="liveCount" style="font-size:.8rem;color:var(--red);font-weight:700;display:none"></span>
         </span>
       </div>
+      <!-- Sport filter tabs -->
+      <div class="sportBtnRow" style="margin-bottom:10px">
+        <button class="sportBtn active" id="sfAll"    onclick="setSportFilter('all',this)">🌐 Todos</button>
+        <button class="sportBtn"        id="sfSoccer" onclick="setSportFilter('soccer',this)">⚽ Soccer</button>
+        <button class="sportBtn"        id="sfNba"    onclick="setSportFilter('nba',this)">🏀 NBA</button>
+        <button class="sportBtn"        id="sfMlb"    onclick="setSportFilter('mlb',this)">⚾ MLB</button>
+      </div>
       <input id="matchFilter" placeholder="🔍 Filtrar equipo o liga..." style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;font-size:.9rem;margin-bottom:12px" oninput="filterMatches()"/>
       <div id="matchList"><div class="alert alert-blue">⏳ Cargando partidos...</div></div>
     </div>
@@ -468,6 +475,7 @@ let allMatches = [];
 let statsInterval = null;
 let scanPollInterval = null;
 let currentGlaiSport = 'soccer';
+let currentSportFilter = 'all';
 
 // ════════════════════════════════════════════════════
 // AUTH
@@ -613,13 +621,29 @@ function startMatchRefresh() {
   matchRefreshInterval = setInterval(() => loadMatches(true), 60000); // cada 60s
 }
 
+function setSportFilter(sport, btn) {
+  currentSportFilter = sport;
+  document.querySelectorAll('#pageMatches .sportBtn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  filterMatches();
+}
+
 function filterMatches() {
   const q = document.getElementById('matchFilter').value.toLowerCase();
-  renderMatches(q ? allMatches.filter(m =>
-    m.homeTeam.toLowerCase().includes(q) ||
-    m.awayTeam.toLowerCase().includes(q) ||
-    m.league.toLowerCase().includes(q)
-  ) : allMatches);
+  let list = allMatches;
+  // Filter by sport tab
+  if (currentSportFilter !== 'all') {
+    list = list.filter(m => (m.sport || 'soccer') === currentSportFilter);
+  }
+  // Filter by text search
+  if (q) {
+    list = list.filter(m =>
+      m.homeTeam.toLowerCase().includes(q) ||
+      m.awayTeam.toLowerCase().includes(q) ||
+      (m.league || '').toLowerCase().includes(q)
+    );
+  }
+  renderMatches(list);
 }
 
 const LEAGUE_NAMES = {
@@ -716,10 +740,17 @@ function matchCard(m, lg) {
   const score = (m.homeScore !== '' && m.awayScore !== '')
     ? `<span class="score">${m.homeScore} - ${m.awayScore}</span>`
     : `<span class="score" style="color:var(--muted)"> vs </span>`;
+  const sport = m.sport || 'soccer';
+  const sportBadge = sport === 'nba'
+    ? `<span class="tag tag-orange" style="font-size:.65rem">🏀 NBA</span>`
+    : sport === 'mlb'
+    ? `<span class="tag tag-purple" style="font-size:.65rem">⚾ MLB</span>`
+    : '';
   return `
-    <div class="matchCard" onclick="openMatchGlai('${m.homeTeam}','${m.awayTeam}','${lg}','${m.sport||'soccer'}')">
+    <div class="matchCard" onclick="openMatchGlai('${m.homeTeam}','${m.awayTeam}','${lg}','${sport}')">
       <div class="matchHeader">
         <span class="statusPill ${statusClass}">${statusLabel}</span>
+        ${sportBadge}
         <span style="font-size:.75rem;color:var(--muted);margin-left:auto">${formatFullDate(m.date)}</span>
       </div>
       <div class="matchTeams">
