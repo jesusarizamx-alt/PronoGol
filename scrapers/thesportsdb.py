@@ -109,6 +109,48 @@ class TheSportsDBScraper:
             total += 1
         return total
 
+    def get_next_fixtures(self, days_ahead=7):
+        """
+        Retorna partidos futuros de las top ligas usando eventsnextleague.php.
+        Gratis, sin API key adicional. Retorna lista de fixtures.
+        """
+        fixtures = []
+        seen = set()
+        for lg_id in TOP_LEAGUES:
+            try:
+                data = self._get(f"eventsnextleague.php?id={lg_id}")
+                if not data or not data.get('events'):
+                    continue
+                espn_lg = TSDB_ESPN_MAP.get(lg_id, f'tsdb_{lg_id}')
+                for ev in (data.get('events') or []):
+                    eid = ev.get('idEvent', '')
+                    if eid in seen:
+                        continue
+                    seen.add(eid)
+                    home = ev.get('strHomeTeam', '')
+                    away = ev.get('strAwayTeam', '')
+                    date = ev.get('dateEvent', '')
+                    time_ = ev.get('strTime', '')
+                    if not home or not away:
+                        continue
+                    fixtures.append({
+                        'homeTeam':  home,
+                        'awayTeam':  away,
+                        'homeScore': '',
+                        'awayScore': '',
+                        'homeLogo':  ev.get('strHomeTeamBadge', ''),
+                        'awayLogo':  ev.get('strAwayTeamBadge', ''),
+                        'date':      f"{date}T{time_}" if date and time_ else date,
+                        'league':    espn_lg,
+                        'status':    'pre',
+                        'source':    'tsdb',
+                    })
+                time.sleep(0.2)
+            except Exception:
+                continue
+        print(f"[TSDB] {len(fixtures)} fixtures futuros obtenidos")
+        return fixtures
+
     def scan_top_leagues(self, days_back=7, glai=None):
         """Escanea top ligas en TheSportsDB para alimentar GLAI."""
         total = 0
