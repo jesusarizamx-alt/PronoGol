@@ -130,6 +130,18 @@ nav button.active{font-weight:700}
 .progressBar{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:8px;transition:width .4s}
 .scanMsg{font-size:.8rem;color:var(--muted);margin-top:4px}
 
+/* ── LIVE SCORE BANNER ───────────────────────────── */
+.liveBanner{background:linear-gradient(135deg,#1a0000,#2d0000);border:1px solid var(--red);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.livePulse{width:12px;height:12px;border-radius:50%;background:var(--red);animation:pulse 1s ease-in-out infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 #f4433660}50%{box-shadow:0 0 0 8px #f4433600}}
+.liveScore{font-size:2rem;font-weight:900;letter-spacing:2px}
+.liveTeams{flex:1;min-width:200px}
+.liveTeamName{font-size:.9rem;color:var(--muted)}
+.liveMinute{background:var(--red);color:#fff;border-radius:4px;padding:3px 8px;font-size:.75rem;font-weight:700}
+
+/* ── UPCOMING BANNER ─────────────────────────────── */
+.upcomingBanner{background:linear-gradient(135deg,#0d2137,#0d1a0d);border:1px solid #4caf5055;border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+
 /* ── UTILS ───────────────────────────────────────── */
 .tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.72rem;font-weight:700}
 .tag-green{background:#1b5e201a;color:#4caf50;border:1px solid #4caf5066}
@@ -190,7 +202,8 @@ nav button.active{font-weight:700}
       <div class="flex" style="margin-bottom:12px">
         <h2 style="margin:0">Partidos de Hoy</h2>
         <span class="ml-auto">
-          <button class="btn btn-sm btn-blue" onclick="loadMatches()">🔄 Actualizar</button>
+          <button id="refreshBtn" class="btn btn-sm btn-blue" onclick="loadMatches()" title="Auto-actualiza cada 60s">🔄 Actualizar</button>
+          <span id="liveCount" style="font-size:.8rem;color:var(--red);font-weight:700;display:none"></span>
         </span>
       </div>
       <input id="matchFilter" placeholder="🔍 Filtrar equipo o liga..." style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;font-size:.9rem;margin-bottom:12px" oninput="filterMatches()"/>
@@ -254,6 +267,9 @@ nav button.active{font-weight:700}
     </div>
 
     <div id="glaiResults" style="display:none">
+      <!-- Banner marcador en vivo -->
+      <div id="liveMatchBanner" style="display:none"></div>
+
       <!-- Probabilidades 1X2 -->
       <div class="card">
         <h2>Probabilidades 1 X 2</h2>
@@ -446,6 +462,7 @@ async function doLogout() {
   currentUser = null;
   clearInterval(statsInterval);
   clearInterval(scanPollInterval);
+  clearInterval(matchRefreshInterval);
   showLogin();
 }
 
@@ -495,6 +512,7 @@ function showApp() {
   loadStats();
   if (currentUser.role === 'admin') { loadUsers(); loadKeys(); }
   startStatsPoll();
+  startMatchRefresh();
 }
 
 // ════════════════════════════════════════════════════
@@ -510,18 +528,28 @@ function showPage(id) {
 // ════════════════════════════════════════════════════
 // PARTIDOS
 // ════════════════════════════════════════════════════
-async function loadMatches() {
+let matchRefreshInterval = null;
+
+async function loadMatches(silent = false) {
   const el = document.getElementById('matchList');
-  el.innerHTML = '<div class="alert alert-blue">⏳ Cargando partidos...</div>';
+  if (!silent) el.innerHTML = '<div class="alert alert-blue">⏳ Cargando partidos...</div>';
   try {
     const r = await apiFetch('/api/matches');
     if (r.status === 401) { showLogin(); return; }
     const d = await r.json();
     allMatches = d.matches || [];
     renderMatches(allMatches);
+    // Actualizar contador de refresh
+    const btn = document.getElementById('refreshBtn');
+    if (btn) btn.title = 'Última actualización: ' + new Date().toLocaleTimeString('es-MX');
   } catch (e) {
-    el.innerHTML = '<div class="alert alert-red">❌ Error: ' + e.message + '</div>';
+    if (!silent) el.innerHTML = '<div class="alert alert-red">❌ Error: ' + e.message + '</div>';
   }
+}
+
+function startMatchRefresh() {
+  clearInterval(matchRefreshInterval);
+  matchRefreshInterval = setInterval(() => loadMatches(true), 60000); // cada 60s
 }
 
 function filterMatches() {
@@ -543,24 +571,85 @@ const LEAGUE_NAMES = {
   'concacaf.champions':'CONCACAF CL','concacaf.league':'CONCACAF Liga',
 };
 
+function matchStatus(m) {
+  const s = (m.status || '').toLowerCase();
+  if (s.includes('progress') || s.includes('live') || s.includes('half')) return 'live';
+  if (s.includes('final') || s.includes('end') || s.includes('finish') || s.includes('ft')) return 'final';
+  return 'pre';
+}
+
 function renderMatches(list) {
   const el = document.getElementById('matchList');
   if (!list.length) { el.innerHTML = '<div class="alert alert-blue">📭 No hay partidos disponibles ahora.</div>'; return; }
-  const byLeague = {};
-  list.forEach(m => { (byLeague[m.league] = byLeague[m.league] || []).push(m); });
-  el.innerHTML = Object.entries(byLeague).map(([lg, ms]) => `
-    <div style="margin-bottom:14px">
-      <div style="font-size:.75rem;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:6px">
-        ${LEAGUE_NAMES[lg] || lg.toUpperCase()}
+
+  // Separar en 3 grupos
+  const live = list.filter(m => matchStatus(m) === 'live');
+  const pre  = list.filter(m => matchStatus(m) === 'pre');
+  const done = list.filter(m => matchStatus(m) === 'final');
+
+  let html = '';
+
+  // ── EN VIVO ────────────────────────────────────
+  if (live.length) {
+    html += `<div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulse 1s ease-in-out infinite"></div>
+        <span style="font-size:.8rem;font-weight:800;color:var(--red);letter-spacing:1px">EN VIVO AHORA</span>
       </div>
-      ${ms.map(m => matchCard(m, lg)).join('')}
-    </div>
-  `).join('');
+      ${live.map(m => matchCard(m, m.league)).join('')}
+    </div>`;
+  }
+
+  // ── PRÓXIMOS ───────────────────────────────────
+  if (pre.length) {
+    const byLeague = {};
+    pre.forEach(m => { (byLeague[m.league] = byLeague[m.league] || []).push(m); });
+    html += `<div style="margin-bottom:20px">
+      <div style="font-size:.8rem;font-weight:800;color:var(--green);letter-spacing:1px;margin-bottom:10px">🗓 PRÓXIMOS</div>
+      ${Object.entries(byLeague).map(([lg, ms]) => `
+        <div style="margin-bottom:12px">
+          <div style="font-size:.7rem;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:4px">${LEAGUE_NAMES[lg] || lg.toUpperCase()}</div>
+          ${ms.map(m => matchCard(m, lg)).join('')}
+        </div>`).join('')}
+    </div>`;
+  }
+
+  // ── TERMINADOS ─────────────────────────────────
+  if (done.length) {
+    const byLeague = {};
+    done.forEach(m => { (byLeague[m.league] = byLeague[m.league] || []).push(m); });
+    html += `<details style="margin-bottom:10px">
+      <summary style="cursor:pointer;font-size:.8rem;font-weight:800;color:var(--muted);letter-spacing:1px;padding:8px 0;list-style:none">
+        ✔ TERMINADOS (${done.length}) — clic para ver
+      </summary>
+      <div style="margin-top:10px">
+        ${Object.entries(byLeague).map(([lg, ms]) => `
+          <div style="margin-bottom:12px">
+            <div style="font-size:.7rem;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:4px">${LEAGUE_NAMES[lg] || lg.toUpperCase()}</div>
+            ${ms.map(m => matchCard(m, lg)).join('')}
+          </div>`).join('')}
+      </div>
+    </details>`;
+  }
+
+  el.innerHTML = html;
+
+  // Badge de en vivo en el header
+  const liveCount = document.getElementById('liveCount');
+  if (liveCount) {
+    if (live.length) {
+      liveCount.style.display = '';
+      liveCount.textContent = '🔴 ' + live.length + ' en vivo';
+    } else {
+      liveCount.style.display = 'none';
+    }
+  }
 }
 
 function matchCard(m, lg) {
-  const isLive = m.status.toLowerCase().includes('progress') || m.status.toLowerCase().includes('live');
-  const isFinal = m.status.toLowerCase().includes('final') || m.status.toLowerCase().includes('end');
+  const st = matchStatus(m);
+  const isLive = st === 'live';
+  const isFinal = st === 'final';
   const statusClass = isLive ? 'statusLive' : (isFinal ? 'statusFinal' : 'statusPre');
   const statusLabel = isLive ? '🔴 EN VIVO' : (isFinal ? 'Final' : '🗓 Próximo');
   const score = (m.homeScore !== '' && m.awayScore !== '')
@@ -570,7 +659,7 @@ function matchCard(m, lg) {
     <div class="matchCard" onclick="openMatchGlai('${m.homeTeam}','${m.awayTeam}','${lg}')">
       <div class="matchHeader">
         <span class="statusPill ${statusClass}">${statusLabel}</span>
-        <span style="font-size:.75rem;color:var(--muted);margin-left:auto">${formatDate(m.date)}</span>
+        <span style="font-size:.75rem;color:var(--muted);margin-left:auto">${formatFullDate(m.date)}</span>
       </div>
       <div class="matchTeams">
         <img src="${m.homeLogo}" onerror="this.src=''" style="width:28px;height:28px;object-fit:contain"/>
@@ -589,11 +678,27 @@ function formatDate(d) {
   } catch { return ''; }
 }
 
+function formatFullDate(d) {
+  if (!d) return '';
+  try {
+    const dt = new Date(d);
+    return dt.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })
+      + ' · ' + dt.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+}
+
 function openMatchGlai(teamA, teamB, league) {
   document.getElementById('teamA').value = teamA;
   document.getElementById('teamB').value = teamB;
   const sel = document.getElementById('leagueSel');
   [...sel.options].forEach(o => { if (o.value === league) sel.value = league; });
+
+  // Buscar si el partido está en vivo o próximo
+  const anyMatch = allMatches.find(m =>
+    m.homeTeam === teamA && m.awayTeam === teamB
+  );
+  window._currentLiveMatch = anyMatch || null;
+
   showPage('glai');
   document.querySelectorAll('nav button').forEach((b,i) => {
     b.classList.toggle('active', i === 1);
@@ -668,6 +773,50 @@ function renderGlai(d, teamA, teamB) {
   const lg   = d.lgStats || pred.lgStats || null;
 
   document.getElementById('glaiResults').style.display = '';
+
+  // ── Banner EN VIVO ──────────────────────────────
+  const liveM = window._currentLiveMatch;
+  const bannerEl = document.getElementById('liveMatchBanner');
+  if (liveM && liveM.homeScore !== '' && liveM.awayScore !== '') {
+    bannerEl.style.display = '';
+    bannerEl.innerHTML = `
+      <div class="liveBanner">
+        <div class="livePulse"></div>
+        <div class="liveTeams">
+          <div style="font-size:.7rem;color:var(--red);font-weight:800;letter-spacing:1px;margin-bottom:4px">PARTIDO EN VIVO</div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="text-align:right;flex:1">
+              <div style="font-weight:700">${teamA}</div>
+              <img src="${liveM.homeLogo}" onerror="this.style.display='none'" style="width:24px;height:24px;object-fit:contain"/>
+            </div>
+            <div class="liveScore">${liveM.homeScore} - ${liveM.awayScore}</div>
+            <div style="flex:1">
+              <div style="font-weight:700">${teamB}</div>
+              <img src="${liveM.awayLogo}" onerror="this.style.display='none'" style="width:24px;height:24px;object-fit:contain"/>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div class="liveMinute">⏱ EN CURSO</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:6px">${formatFullDate(liveM.date)}</div>
+          <div style="font-size:.68rem;color:#555;margin-top:2px">Actualiza cada 60s</div>
+        </div>
+      </div>`;
+  } else if (liveM) {
+    // Partido próximo
+    bannerEl.style.display = '';
+    bannerEl.innerHTML = `
+      <div class="upcomingBanner">
+        <span style="font-size:1.2rem">🗓</span>
+        <div>
+          <div style="font-size:.75rem;color:var(--green);font-weight:800;letter-spacing:1px">PRÓXIMO PARTIDO</div>
+          <div style="font-weight:700;margin-top:2px">${teamA} vs ${teamB}</div>
+          <div style="font-size:.82rem;color:var(--green);font-weight:600;margin-top:4px">📅 ${formatFullDate(liveM.date)}</div>
+        </div>
+      </div>`;
+  } else {
+    bannerEl.style.display = 'none';
+  }
 
   // ── Barra 1X2 ──────────────────────────────────
   const pA = pred.pctA || 0, pD = pred.pctD || 0, pB = pred.pctB || 0;
