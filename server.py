@@ -33,6 +33,53 @@ espn  = ESPNScraper(db.get_all_keys())
 tsdb  = TheSportsDBScraper()
 sprt  = SportradarScraper(db=db)  # ← NUEVO — lee key desde env var o DB
 
+# ── Helper: calcular xG automático (Sportradar DB + historial ponderado) ──
+def calc_auto_xg(team, sport='soccer', default=1.4):
+    """
+    Calcula el xG estimado de un equipo usando:
+    1. Resultados de Sportradar (fuente más confiable) — peso mayor
+    2. Resultados de ESPN y otras fuentes — peso menor
+    Juegos más recientes pesan más (decaimiento exponencial).
+    """
+    try:
+        results = db.get_team_results(team, limit=15)
+        if not results:
+            return default
+
+        weighted_sum = 0.0
+        weight_total = 0.0
+        key = team.lower()[:7]
+
+        for i, r in enumerate(results):
+            if r.get('sport', 'soccer') != sport:
+                continue
+            hn = r.get('home_team', '')
+            an = r.get('away_team', '')
+
+            if key in hn.lower():
+                goles = r['home_goals']
+            elif key in an.lower():
+                goles = r['away_goals']
+            else:
+                continue
+
+            # Juegos más recientes pesan más (posición 0 = más reciente)
+            recency_weight = 1.0 / (1.0 + i * 0.15)
+            # Sportradar pesa el doble que otras fuentes
+            source_weight = 2.0 if r.get('source', '') == 'sportradar' else 1.0
+
+            w = recency_weight * source_weight
+            weighted_sum += goles * w
+            weight_total += w
+
+        if weight_total == 0:
+            return default
+
+        xg = weighted_sum / weight_total
+        return round(max(0.1, xg), 2)
+    except Exception:
+        return default
+
 # ── Scheduler — GLAI aprende sola cada 2 horas ───────────────────
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(
@@ -326,8 +373,11 @@ def glai_analyze():
         team_b = data.get('teamB', '')
         league = data.get('league', 'soccer')
         sport  = data.get('sport', 'soccer')   # soccer | nba | mlb
-        val_a  = float(data.get('xgA', 1.4))  # xG / PPG / RPG
-        val_b  = float(data.get('xgB', 1.1))
+        # xG/PPG/RPG: si el frontend no los manda, la IA los calcula del historial
+        _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else 1.4)
+        _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else 1.1)
+        val_a  = float(data['xgA']) if 'xgA' in data else calc_auto_xg(team_a, sport, _def_a)
+        val_b  = float(data['xgB']) if 'xgB' in data else calc_auto_xg(team_b, sport, _def_b)
     except Exception as e:
         return jsonify({'error': f'Datos inválidos: {e}'}), 400
 
