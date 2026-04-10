@@ -95,6 +95,26 @@ def login():
     session.permanent = True
     return jsonify({'ok': True, 'user': user})
 
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    data     = request.get_json() or {}
+    username = (data.get('username') or '').strip()
+    password = (data.get('password') or '').strip()
+    if not username or not password:
+        return jsonify({'error': 'Completa usuario y contraseña'}), 400
+    if len(username) < 3:
+        return jsonify({'error': 'El usuario debe tener al menos 3 caracteres'}), 400
+    if len(password) < 6:
+        return jsonify({'error': 'La contraseña debe tener al menos 6 caracteres'}), 400
+    try:
+        # 5 tokens gratis de bienvenida, rol free
+        user = users.create_user(username, password, 'free', 5)
+        session['user'] = user
+        session.permanent = True
+        return jsonify({'ok': True, 'user': user})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
     session.clear()
