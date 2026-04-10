@@ -813,6 +813,35 @@ nav button.active{font-weight:700}
   <!-- ── PÁGINA: ADMIN ─────────────────────────────── -->
   <div id="pageAdmin" class="page">
 
+    <!-- 👥 Gestión de usuarios — PRIMERO -->
+    <div class="card">
+      <h2>👥 Usuarios</h2>
+
+      <!-- Formulario crear usuario -->
+      <div style="background:#0d1117;border-radius:10px;padding:14px;margin-bottom:16px">
+        <div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:10px">➕ Crear nuevo usuario</div>
+        <div class="flex" style="gap:8px;flex-wrap:wrap">
+          <input id="newUser" placeholder="Nombre de usuario" class="inputInline" style="width:150px"/>
+          <input id="newPass" placeholder="Contraseña" type="password" class="inputInline" style="width:140px"/>
+          <select id="newRole" class="roleSelect">
+            <option value="free">free</option>
+            <option value="premium">premium</option>
+            <option value="admin">admin</option>
+          </select>
+          <input id="newToks" type="number" value="20" min="0" class="inputInline" style="width:80px" placeholder="Tokens"/>
+          <button class="btn btn-sm btn-green" onclick="createUser()" style="white-space:nowrap">+ Crear usuario</button>
+        </div>
+      </div>
+
+      <div id="userMsg" class="alert" style="display:none"></div>
+      <div style="overflow-x:auto">
+        <table class="userTable">
+          <thead><tr><th>Usuario</th><th>Rol</th><th>Tokens</th><th>Acciones</th></tr></thead>
+          <tbody id="userTableBody"><tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- 🔥 Partidos Clave — Alertas VIP -->
     <div class="card" style="border-color:rgba(255,109,0,.4)">
       <h2 style="color:var(--orange)">🔥 Partidos Clave — Alertas Premium</h2>
@@ -953,28 +982,6 @@ nav button.active{font-weight:700}
       <div id="keysList" style="margin-top:14px"></div>
     </div>
 
-    <!-- Gestión de usuarios -->
-    <div class="card">
-      <h2>👥 Usuarios</h2>
-      <div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:14px">
-        <input id="newUser" placeholder="Usuario" class="inputInline"/>
-        <input id="newPass" placeholder="Contraseña" type="password" class="inputInline"/>
-        <select id="newRole" class="roleSelect">
-          <option value="free">free</option>
-          <option value="premium">premium</option>
-          <option value="admin">admin</option>
-        </select>
-        <input id="newToks" type="number" value="10" min="0" class="inputInline" style="width:80px" placeholder="Tokens"/>
-        <button class="btn btn-sm btn-green" onclick="createUser()">+ Crear</button>
-      </div>
-      <div id="userMsg" class="alert" style="display:none"></div>
-      <div style="overflow-x:auto">
-        <table class="userTable">
-          <thead><tr><th>Usuario</th><th>Rol</th><th>Tokens</th><th>Acciones</th></tr></thead>
-          <tbody id="userTableBody"></tbody>
-        </table>
-      </div>
-    </div>
   </div>
 <!-- ── MODAL CAMBIAR CONTRASEÑA ──────────────────────── -->
 <div id="pwModal" style="display:none;position:fixed;inset:0;background:#000a;z-index:1000;align-items:center;justify-content:center">
@@ -1174,6 +1181,11 @@ function showPage(id) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('page' + id.charAt(0).toUpperCase() + id.slice(1)).classList.add('active');
   event.currentTarget.classList.add('active');
+  // Recargar datos al entrar a admin
+  if (id === 'admin' && currentUser?.role === 'admin') {
+    loadUsers();
+    loadKeys();
+  }
 }
 
 // ════════════════════════════════════════════════════
@@ -1505,7 +1517,9 @@ async function runGlai() {
     else if (sport === 'mlb') renderGlaiMLB(d, teamA, teamB);
     else renderGlai(d, teamA, teamB);
   } catch (e) {
-    alert('Error de conexión: ' + e.message);
+    document.getElementById('tokenWarn').style.display = '';
+    document.getElementById('tokenWarn').innerHTML =
+      `❌ Error: ${e.message || 'No se pudo conectar con el servidor. Intenta de nuevo.'}`;
   } finally {
     btn.innerHTML = '🧠 Analizar con IA';
     btn.disabled = false;
