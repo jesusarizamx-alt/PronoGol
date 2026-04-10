@@ -142,19 +142,19 @@ class Database:
                      home_goals, away_goals, source='unknown', event_id=None):
         """Guarda un resultado. Ignora duplicados por event_id."""
         with self._write_lock:
-            c = self._conn()
+            conn = self._conn()
             try:
-                c.execute("""
+                cur = conn.execute("""
                     INSERT OR IGNORE INTO match_results
                     (sport, league_id, home_team, away_team, home_goals, away_goals, source, event_id, learned_at)
                     VALUES (?,?,?,?,?,?,?,?,?)
                 """, (sport, league_id, home_team.strip(), away_team.strip(),
                       int(home_goals), int(away_goals), source, event_id,
                       datetime.utcnow().isoformat()))
-                inserted = c.rowcount > 0
-                c.commit()
+                inserted = cur.rowcount > 0
+                conn.commit()
                 if inserted:
-                    self._update_league_stats(c, sport, league_id, home_goals, away_goals)
+                    self._update_league_stats(conn, sport, league_id, home_goals, away_goals)
                 return inserted
             except Exception as e:
                 print(f"[DB] learn_result error: {e}")
