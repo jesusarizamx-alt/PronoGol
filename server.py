@@ -224,17 +224,16 @@ def glai_scan():
     return jsonify({'ok': True, 'msg': f'Scan iniciado ({days} días)'})
 
 @app.route('/api/glai/analyze', methods=['POST'])
-@require_premium
+@require_login
 def glai_analyze():
-    """Análisis GLAI completo — consume 1 token si es premium."""
+    """Análisis GLAI — consume 1 token para todos (admin = ilimitado)."""
     u = current_user()
-    # Deducir token si es premium
-    if u.get('role') == 'premium':
+    # Admin = ilimitado. Todos los demás consumen 1 token.
+    if u.get('role') != 'admin':
         ok = users.use_token(u['username'])
         if not ok:
             return jsonify({'error': 'no_tokens',
                            'msg': 'Sin tokens disponibles. Contacta al admin.'}), 403
-        # Refrescar sesión con nuevo balance
         session['user'] = users.get_user(u['username'])
 
     data   = request.get_json() or {}
@@ -244,7 +243,8 @@ def glai_analyze():
     sport  = data.get('sport', 'soccer')   # soccer | nba | mlb
     val_a  = float(data.get('xgA', 1.4))  # xG / PPG / RPG
     val_b  = float(data.get('xgB', 1.1))
-    tokens_left = session['user'].get('tokens') if u.get('role') == 'premium' else -1
+    # Tokens restantes: -1 = ilimitado (admin), número real para todos los demás
+    tokens_left = session['user'].get('tokens') if u.get('role') != 'admin' else -1
 
     # ── NBA ─────────────────────────────────────────────────────────
     if sport == 'nba':
@@ -413,6 +413,56 @@ def admin_trigger_scan():
     return jsonify({'ok': True, 'msg': f'Scan histórico iniciado ({days} días)'})
 
 # ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════
+# RUTAS — PARTIDOS CLAVE (alertas VIP)
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/glai/key-matches', methods=['POST'])
+@require_admin
+def key_matches():
+    """Analiza los partidos de hoy y devuelve los que tienen prob > umbral."""
+    data      = request.get_json() or {}
+    threshold = float(data.get('threshold', 0.72))  # 72% default
+    matches   = espn.get_all_today()
+    results   = []
+    for m in matches:
+        if m.get('status') not in ('pre', 'scheduled'):
+            continue  # solo partidos futuros
+        sport  = m.get('sport', 'soccer')
+        home   = m.get('homeTeam', '')
+        away   = m.get('awayTeam', '')
+        try:
+            if sport == 'nba':
+                pred = glai.predict_nba(115.0, 112.0)
+                prob = max(pred.get('home_win', 0), pred.get('away_win', 0))
+            elif sport == 'mlb':
+                pred = glai.predict_mlb(4.5, 4.2)
+                prob = max(pred.get('home_win', 0), pred.get('away_win', 0))
+            else:
+                pred = glai.predict('soccer', m.get('league', 'soccer'), 1.4, 1.1)
+                prob = max(
+                    pred.get('home_win', 0),
+                    pred.get('draw', 0),
+                    pred.get('away_win', 0)
+                )
+            if prob >= threshold:
+                winner = home if pred.get('home_win', 0) == prob else (
+                    'Empate' if pred.get('draw', 0) == prob else away
+                )
+                results.append({
+                    'sport':    sport,
+                    'home':     home,
+                    'away':     away,
+                    'league':   m.get('league', ''),
+                    'date':     m.get('date', ''),
+                    'prob':     round(prob * 100, 1),
+                    'winner':   winner,
+                    'waText':   f'🔥 Partido clave hoy: {home} vs {away} — Pronóstico: {winner} ({round(prob*100,1)}%) 📊 PronoGol IA'
+                })
+        except Exception:
+            continue
+    results.sort(key=lambda x: x['prob'], reverse=True)
+    return jsonify({'ok': True, 'matches': results})
+
 # RUTAS — API KEYS
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/keys', methods=['GET'])
