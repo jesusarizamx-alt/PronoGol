@@ -367,32 +367,41 @@ def sportradar_debug():
     active_key = env_key or db_key
     key_source = 'env var SPORTRADAR_API_KEY' if env_key else (f'DB key "{db_key_name}"' if db_key else 'ninguna')
 
-    # Prueba real HTTP
-    http_status = None
-    http_body   = ''
+    # Prueba múltiples URLs para encontrar la correcta
+    results = []
     if active_key:
-        try:
-            from datetime import datetime
-            today = datetime.utcnow().strftime('%Y-%m-%d')
-            url   = f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/schedule.json"
-            r = req.get(url, headers={'Accept': 'application/json', 'x-api-key': active_key}, timeout=10)
-            http_status = r.status_code
-            http_body   = r.text[:200]
-        except Exception as e:
-            http_body = str(e)
+        from datetime import datetime
+        today = datetime.utcnow().strftime('%Y-%m-%d')
+        hdrs  = {'Accept': 'application/json', 'x-api-key': active_key}
+        urls_to_try = [
+            f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/schedule.json",
+            f"https://api.sportradar.com/soccer/production/v4/en/schedules/{today}/schedule.json",
+            f"https://api.sportradar.com/soccer/trial/v4/en/competitions.json",
+            f"https://api.sportradar.com/soccer/trial/v4/en/schedules/live/schedule.json",
+            f"https://api.sportradar.com/soccer-extended/trial/v4/en/competitions.json",
+            f"https://api.sportradar.com/soccer/trial/v4/en/seasons.json",
+        ]
+        import time as _time
+        for url in urls_to_try:
+            try:
+                r = req.get(url, headers=hdrs, timeout=8)
+                results.append({'url': url, 'status': r.status_code, 'body': r.text[:120]})
+                if r.status_code == 200:
+                    break  # Encontramos la URL correcta
+            except Exception as ex:
+                results.append({'url': url, 'status': 'error', 'body': str(ex)})
+            _time.sleep(1.1)  # Respetar rate limit
 
     return jsonify({
         'env_key_set':    bool(env_key),
         'env_key_prefix': env_key[:6] + '...' if env_key else '',
         'db_key_set':     bool(db_key),
         'db_key_name':    db_key_name,
-        'db_key_prefix':  db_key[:6] + '...' if db_key else '',
         'key_source':     key_source,
         'active_key_set': bool(active_key),
-        'http_status':    http_status,
-        'http_body':      http_body,
         'scraper_ok':     sprt._ok(),
         'all_db_keys':    list(all_keys.keys()) if isinstance(all_keys, dict) else [],
+        'url_tests':      results,
     })
 
 @app.route('/api/sportradar/status')
