@@ -117,6 +117,51 @@ class GLAIEngine:
             'totalLearned': self.total_learned(),
         }
 
+    # ─── Head-to-Head ─────────────────────────────────────────────
+    def get_h2h(self, team_a, team_b, limit=8):
+        """Historial directo entre dos equipos con estadísticas."""
+        raw = self.db.get_h2h_results(team_a, team_b, limit)
+        if not raw:
+            return {'matches': [], 'winsA': 0, 'winsB': 0, 'draws': 0, 'total': 0,
+                    'pctA': 0, 'pctB': 0, 'pctD': 0}
+        matches = []
+        wins_a = wins_b = draws = 0
+        for r in raw:
+            a_is_home = team_a.lower()[:6] in r['home_team'].lower()
+            hg, ag = r['home_goals'], r['away_goals']
+            if a_is_home:
+                score_a, score_b = hg, ag
+                if hg > ag:   wins_a += 1; result = 'A'
+                elif hg < ag: wins_b += 1; result = 'B'
+                else:         draws  += 1; result = 'D'
+            else:
+                score_a, score_b = ag, hg
+                if ag > hg:   wins_a += 1; result = 'A'
+                elif ag < hg: wins_b += 1; result = 'B'
+                else:         draws  += 1; result = 'D'
+            matches.append({
+                'homeTeam':  r['home_team'],
+                'awayTeam':  r['away_team'],
+                'homeGoals': hg,
+                'awayGoals': ag,
+                'scoreA':    score_a,
+                'scoreB':    score_b,
+                'result':    result,
+                'league':    r['league_id'],
+                'date':      r.get('learned_at', ''),
+            })
+        total = wins_a + wins_b + draws
+        return {
+            'matches': matches,
+            'winsA':   wins_a,
+            'winsB':   wins_b,
+            'draws':   draws,
+            'total':   total,
+            'pctA':    round(wins_a / total * 100) if total else 0,
+            'pctB':    round(wins_b / total * 100) if total else 0,
+            'pctD':    round(draws  / total * 100) if total else 0,
+        }
+
     # ─── Historial por equipo ─────────────────────────────────────
     def team_history(self, team_name, limit=5):
         """Últimos N partidos de un equipo — todas las competencias."""
@@ -147,42 +192,66 @@ class GLAIEngine:
         return hist
 
     # ─── Análisis de apuesta IA ───────────────────────────────────
-    def ai_bet(self, hist_a, hist_b, xg_a, xg_b, team_a, team_b):
+    def ai_bet(self, hist_a, hist_b, xg_a, xg_b, team_a, team_b, h2h=None):
         """
         Genera recomendación de apuesta basada en historial real.
         hist_a / hist_b: listas de dicts con 'myG', 'oppG', 'result'.
+        h2h: dict con historial directo entre los dos equipos.
+        Usa PESO POR RECENCIA: partidos más recientes cuentan más.
         """
-        def avg(arr, key):
-            return sum(m[key] for m in arr) / len(arr) if arr else 0
+        # ── Promedio ponderado por recencia ──────────────────────
+        def weighted_avg(arr, key):
+            """Partido más reciente = peso más alto (3,2.5,2,1.5,1,1,...)"""
+            if not arr:
+                return 0
+            weights = [max(1.0, 3.5 - i * 0.5) for i in range(len(arr))]
+            total_w = sum(weights)
+            return sum(arr[i][key] * weights[i] for i in range(len(arr))) / total_w
 
-        avg_scored_a = avg(hist_a, 'myG')
-        avg_conceded_a = avg(hist_a, 'oppG')
-        avg_scored_b = avg(hist_b, 'myG')
-        avg_conceded_b = avg(hist_b, 'oppG')
+        def weighted_rate(arr, fn):
+            if not arr:
+                return 0.5
+            weights = [max(1.0, 3.5 - i * 0.5) for i in range(len(arr))]
+            total_w = sum(weights)
+            return sum(weights[i] for i in range(len(arr)) if fn(arr[i])) / total_w
+
+        avg_scored_a   = weighted_avg(hist_a, 'myG')
+        avg_conceded_a = weighted_avg(hist_a, 'oppG')
+        avg_scored_b   = weighted_avg(hist_b, 'myG')
+        avg_conceded_b = weighted_avg(hist_b, 'oppG')
 
         has_real = len(hist_a) >= 2 or len(hist_b) >= 2
 
         cross_xg_a = (avg_scored_a + avg_conceded_b) / 2 if has_real else xg_a
         cross_xg_b = (avg_scored_b + avg_conceded_a) / 2 if has_real else xg_b
+
+        # ── Ajuste H2H (si hay historial directo) ────────────────
+        if h2h and h2h.get('total', 0) >= 3:
+            h2h_weight = min(0.25, h2h['total'] / 40)
+            if h2h['pctA'] > 50:
+                cross_xg_a *= (1 + h2h_weight * (h2h['pctA'] - 50) / 100)
+                cross_xg_b *= (1 - h2h_weight * (h2h['pctA'] - 50) / 100)
+            elif h2h['pctB'] > 50:
+                cross_xg_b *= (1 + h2h_weight * (h2h['pctB'] - 50) / 100)
+                cross_xg_a *= (1 - h2h_weight * (h2h['pctB'] - 50) / 100)
+
         cross_total = cross_xg_a + cross_xg_b
 
-        def rate(arr, fn):
-            return sum(1 for m in arr if fn(m)) / len(arr) if arr else 0.5
-
-        btts_a = rate(hist_a, lambda m: m['myG'] > 0 and m['oppG'] > 0)
-        btts_b = rate(hist_b, lambda m: m['myG'] > 0 and m['oppG'] > 0)
+        # Usar weighted_rate (ya definida arriba)
+        btts_a = weighted_rate(hist_a, lambda m: m['myG'] > 0 and m['oppG'] > 0)
+        btts_b = weighted_rate(hist_b, lambda m: m['myG'] > 0 and m['oppG'] > 0)
         btts_comb = round((btts_a + btts_b) / 2 * 100)
 
-        o25_a = rate(hist_a, lambda m: m['myG'] + m['oppG'] > 2.5)
-        o25_b = rate(hist_b, lambda m: m['myG'] + m['oppG'] > 2.5)
+        o25_a = weighted_rate(hist_a, lambda m: m['myG'] + m['oppG'] > 2.5)
+        o25_b = weighted_rate(hist_b, lambda m: m['myG'] + m['oppG'] > 2.5)
         o25_comb = round((o25_a + o25_b) / 2 * 100)
 
-        o15_a = rate(hist_a, lambda m: m['myG'] + m['oppG'] > 1.5)
-        o15_b = rate(hist_b, lambda m: m['myG'] + m['oppG'] > 1.5)
+        o15_a = weighted_rate(hist_a, lambda m: m['myG'] + m['oppG'] > 1.5)
+        o15_b = weighted_rate(hist_b, lambda m: m['myG'] + m['oppG'] > 1.5)
         o15_comb = round((o15_a + o15_b) / 2 * 100)
 
-        win_a = rate(hist_a, lambda m: m['result'] == 'G')
-        win_b = rate(hist_b, lambda m: m['result'] == 'G')
+        win_a = weighted_rate(hist_a, lambda m: m['result'] == 'G')
+        win_b = weighted_rate(hist_b, lambda m: m['result'] == 'G')
 
         bets = []
         if btts_comb >= 60:

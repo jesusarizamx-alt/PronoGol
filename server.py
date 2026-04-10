@@ -260,8 +260,11 @@ def glai_analyze():
     if team_b:
         tsdb.learn_team_events(team_b, glai, league_id=league)
 
+    # Head-to-Head directo entre los dos equipos
+    h2h = glai.get_h2h(team_a, team_b) if team_a and team_b else None
+
     prediction    = glai.predict('soccer', league, val_a, val_b)
-    bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b)
+    bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b, h2h=h2h)
     corners_cards = glai.predict_corners_cards(val_a, val_b, league)
     lg_stats      = glai.get_league_stats('soccer', league)
 
@@ -275,6 +278,7 @@ def glai_analyze():
         'cards':      corners_cards['cards'],
         'histA':      hist_a,
         'histB':      hist_b,
+        'h2h':        h2h,
         'lgStats':    lg_stats,
         'total':      glai.total_learned(),
     })

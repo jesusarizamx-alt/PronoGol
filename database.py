@@ -194,6 +194,21 @@ class Database:
         """, (like, like, limit)).fetchall()
         return [dict(r) for r in rows]
 
+    def get_h2h_results(self, team_a, team_b, limit=10):
+        """
+        Historial directo entre team_a y team_b (en cualquier dirección).
+        Retorna los últimos N enfrentamientos del más reciente al más viejo.
+        """
+        like_a = f"%{team_a[:8]}%"
+        like_b = f"%{team_b[:8]}%"
+        rows = self._conn().execute("""
+            SELECT * FROM match_results
+            WHERE (home_team LIKE ? AND away_team LIKE ?)
+               OR (home_team LIKE ? AND away_team LIKE ?)
+            ORDER BY learned_at DESC LIMIT ?
+        """, (like_a, like_b, like_b, like_a, limit)).fetchall()
+        return [dict(r) for r in rows]
+
     # ─── api_keys ────────────────────────────────────────────────
     def save_key(self, name, value):
         self._conn().execute("""
