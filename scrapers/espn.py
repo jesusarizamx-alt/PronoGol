@@ -33,14 +33,20 @@ class ESPNScraper:
         competitors = comp.get('competitors', [])
         if len(competitors) < 2:
             return None
-        home, away = self._parse_competitors(competitors)
+        home, away  = self._parse_competitors(competitors)
         sport_path  = 'soccer' if sport == 'soccer' else ('basketball' if sport == 'nba' else 'baseball')
         logo_base   = f"https://a.espncdn.com/i/teamlogos/{sport_path}/500"
+        status_obj  = comp.get('status', {})
+        status_type = status_obj.get('type', {})
+        # Live match data: period, clock, display detail
+        period      = status_obj.get('period', 0)
+        clock       = status_obj.get('displayClock', '')
+        detail      = status_type.get('shortDetail', '') or status_type.get('description', '')
         return {
             'id':        ev.get('id'),
             'name':      ev.get('name', ''),
             'date':      ev.get('date', ''),
-            'status':    comp.get('status', {}).get('type', {}).get('name', ''),
+            'status':    status_type.get('name', ''),
             'league':    lg_id,
             'sport':     sport,
             'homeTeam':  home.get('team', {}).get('displayName', ''),
@@ -53,6 +59,9 @@ class ESPNScraper:
                           f"{logo_base}/{home.get('team',{}).get('id','')}.png"),
             'awayLogo':  (away.get('team', {}).get('logo') or
                           f"{logo_base}/{away.get('team',{}).get('id','')}.png"),
+            'period':    period,   # quarter / inning / half
+            'clock':     clock,    # time display e.g. "45:00", "4:32", "Bot 6th"
+            'detail':    detail,   # human readable e.g. "HT", "Q3", "7th Inning"
         }
 
     def _fetch_scoreboard(self, sport_path, league_id, date_str=None):
