@@ -220,8 +220,8 @@ nav button.active{font-weight:700}
 .plansSection{padding:48px 20px;max-width:1000px;margin:0 auto}
 .plansSection h2{text-align:center;font-size:1.6rem;margin-bottom:8px}
 .plansSection>p{text-align:center;color:var(--muted);margin-bottom:32px}
-.plansGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-@media(max-width:720px){.plansGrid{grid-template-columns:1fr}}
+.plansGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;max-width:680px;margin:0 auto}
+@media(max-width:600px){.plansGrid{grid-template-columns:1fr}}
 .planCard{
   background:var(--card);border:1px solid var(--border);border-radius:16px;
   padding:28px 24px;position:relative;transition:.2s
@@ -362,22 +362,6 @@ nav button.active{font-weight:700}
         </a>
       </div>
 
-      <!-- VIP -->
-      <div class="planCard" style="border-color:#c62828;box-shadow:0 0 0 1px #c6282850,0 8px 32px rgba(198,40,40,.15)">
-        <div class="planName">💎 VIP</div>
-        <div class="planPrice" style="color:#e53935">$$$ <span>/ mes</span></div>
-        <div class="planSub">Máximo nivel</div>
-        <ul class="planFeatures">
-          <li><span class="ico">✅</span> Todo lo de Premium</li>
-          <li><span class="ico">🪙</span> <strong>Predicciones extra</strong> por ciclo</li>
-          <li><span class="ico">📲</span> Alertas de partidos clave por WhatsApp</li>
-          <li><span class="ico">✅</span> Soporte directo 1 a 1</li>
-          <li><span class="ico">✅</span> Acceso prioritario a novedades</li>
-        </ul>
-        <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20suscripci%C3%B3n%20VIP%20a%20PronoGol%20IA" target="_blank" class="planBtn planBtnVip" style="display:block;text-align:center;text-decoration:none;padding:13px 0;font-size:1rem">
-          💎 Quiero acceso VIP
-        </a>
-      </div>
 
     </div>
   </section>
@@ -699,28 +683,84 @@ nav button.active{font-weight:700}
 
   <!-- ── PÁGINA: ESTADÍSTICAS ─────────────────────── -->
   <div id="pageStats" class="page">
+
+    <!-- Resumen general -->
     <div class="card">
       <div class="flex" style="margin-bottom:14px">
-        <h2 style="margin:0">📊 GLAI — Base de Conocimiento</h2>
+        <h2 style="margin:0">🧠 Reporte de Aprendizaje — GLAI IA</h2>
         <span class="ml-auto" id="scanStatusBadge"></span>
       </div>
       <div id="scanProgressArea" style="display:none">
         <div class="progressWrap"><div class="progressBar" id="scanPBar" style="width:0%"></div></div>
         <div class="scanMsg" id="scanMsg">Escaneando...</div>
       </div>
-      <div class="statRow">
-        <span>Total de partidos aprendidos</span>
-        <strong id="statTotal" style="font-size:1.4rem;color:var(--green)">—</strong>
+
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px">
+        <div style="background:#0d1117;border-radius:10px;padding:16px;text-align:center">
+          <div id="statTotal" style="font-size:2rem;font-weight:900;color:var(--green)">—</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Total aprendidos</div>
+        </div>
+        <div style="background:#0d1117;border-radius:10px;padding:16px;text-align:center">
+          <div style="font-size:1.5rem;font-weight:900;color:#1e88e5">⚽ <span id="statSoccer">—</span></div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Soccer</div>
+        </div>
+        <div style="background:#0d1117;border-radius:10px;padding:16px;text-align:center">
+          <div style="font-size:1.5rem;font-weight:900;color:#ff6d00">🏀 <span id="statNba">—</span></div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">NBA</div>
+        </div>
+        <div style="background:#0d1117;border-radius:10px;padding:16px;text-align:center">
+          <div style="font-size:1.5rem;font-weight:900;color:#e53935">⚾ <span id="statMlb">—</span></div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">MLB</div>
+        </div>
       </div>
-      <div class="statRow">
-        <span>Último scan autónomo</span>
-        <span id="statLastScan" style="color:var(--muted)">—</span>
+
+      <!-- Último scan y próximo -->
+      <div style="background:#0d1117;border-radius:10px;padding:14px;display:flex;flex-wrap:wrap;gap:16px">
+        <div style="flex:1;min-width:180px">
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">📅 Último aprendizaje autónomo</div>
+          <div id="statLastScan" style="font-weight:700;color:var(--text)">—</div>
+        </div>
+        <div style="flex:1;min-width:180px">
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">⏱ Próximo scan en aprox.</div>
+          <div id="statNextScan" style="font-weight:700;color:var(--green)">—</div>
+        </div>
+        <div style="flex:1;min-width:180px">
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">🔄 Frecuencia de aprendizaje</div>
+          <div style="font-weight:700;color:var(--text)">Cada hora (automático)</div>
+        </div>
       </div>
     </div>
 
+    <!-- Cómo mejora la IA -->
     <div class="card">
-      <h2>Por Liga</h2>
-      <div id="lgStatsList"></div>
+      <h2>📈 ¿Cómo mejora la IA con el tiempo?</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
+        <div style="background:#0d1117;border-left:3px solid var(--green);border-radius:8px;padding:14px">
+          <div style="font-weight:700;margin-bottom:6px">🗂 Más datos → más precisión</div>
+          <p style="font-size:.82rem;color:var(--muted);line-height:1.6">Cada partido aprendido ajusta las tasas de victoria, goles y carreras promedio. Con más de 50 partidos por liga, el modelo es significativamente más preciso.</p>
+        </div>
+        <div style="background:#0d1117;border-left:3px solid var(--blue);border-radius:8px;padding:14px">
+          <div style="font-weight:700;margin-bottom:6px">⚖️ Ponderación por recencia</div>
+          <p style="font-size:.82rem;color:var(--muted);line-height:1.6">Los partidos recientes tienen más peso que los históricos. El sistema aplica factores [3.0, 2.5, 2.0, 1.5...] a los últimos resultados para reflejar la forma actual del equipo.</p>
+        </div>
+        <div style="background:#0d1117;border-left:3px solid var(--orange);border-radius:8px;padding:14px">
+          <div style="font-weight:700;margin-bottom:6px">🤝 Head-to-Head histórico</div>
+          <p style="font-size:.82rem;color:var(--muted);line-height:1.6">Cuando hay historial directo entre dos equipos, la IA ajusta la predicción hasta un 25% basándose en quién ha ganado más veces en enfrentamientos anteriores.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats por deporte -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="sportStatsGrid">
+      <div class="card">
+        <h2>⚽ Soccer — por Liga</h2>
+        <div id="lgStatsList"></div>
+      </div>
+      <div class="card">
+        <h2>🏀 NBA / ⚾ MLB</h2>
+        <div id="lgStatsOther"></div>
+      </div>
     </div>
   </div>
 
@@ -729,10 +769,10 @@ nav button.active{font-weight:700}
 
     <!-- 🔥 Partidos Clave — Alertas VIP -->
     <div class="card" style="border-color:rgba(255,109,0,.4)">
-      <h2 style="color:var(--orange)">🔥 Partidos Clave — Alertas VIP</h2>
+      <h2 style="color:var(--orange)">🔥 Partidos Clave — Alertas Premium</h2>
       <p style="color:var(--muted);font-size:.85rem;margin-bottom:12px">
         La IA analiza los partidos de hoy y detecta los que tienen mayor probabilidad de resultado claro.
-        Mándalos directamente por WhatsApp a tus usuarios VIP.
+        Mándalos directamente por WhatsApp a tus usuarios Premium.
       </p>
       <div class="flex" style="gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <label style="color:var(--muted);align-self:center;font-size:.85rem">Mínimo % probabilidad:</label>
