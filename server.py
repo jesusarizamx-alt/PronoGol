@@ -14,6 +14,7 @@ from users import UserManager
 from glai import GLAIEngine
 from scrapers.espn import ESPNScraper
 from scrapers.thesportsdb import TheSportsDBScraper
+from scrapers.sportradar import SportradarScraper  # ← NUEVO
 
 # ── App setup ────────────────────────────────────────────────────
 BASE = Path(__file__).parent
@@ -30,6 +31,7 @@ users = UserManager(db)
 glai  = GLAIEngine(db)
 espn  = ESPNScraper(db.get_all_keys())
 tsdb  = TheSportsDBScraper()
+sprt  = SportradarScraper(db=db)  # ← NUEVO — lee key desde env var o DB
 
 # ── Scheduler — GLAI aprende sola cada 2 horas ───────────────────
 scheduler = BackgroundScheduler(daemon=True)
@@ -42,6 +44,10 @@ scheduler.add_job(
 )
 scheduler.start()
 print("[Server] ✅ APScheduler activo — GLAI aprende sola cada 2 horas")
+if sprt._ok():
+    print("[Server] ✅ Sportradar conectado — API key detectada")
+else:
+    print("[Server] ⚠️  Sportradar sin API key — usando solo ESPN")
 
 # ── Auth helpers ─────────────────────────────────────────────────
 def current_user():
@@ -154,16 +160,36 @@ def change_password():
     return jsonify({'ok': True, 'msg': '✅ Contraseña actualizada correctamente'})
 
 # ════════════════════════════════════════════════════════════════
-# RUTAS — PARTIDOS (ESPN proxy — sin CORS)
+# RUTAS — PARTIDOS (ESPN + Sportradar)
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/matches')
 @require_login
 def matches():
     try:
-        # Soccer + NBA + MLB de ESPN
+        # ── ESPN: Soccer + NBA + MLB ──────────────────────────────
         data = espn.get_all_today()
 
-        # Agregar fixtures futuros (soccer de TheSportsDB/FootballData)
+        # ── Sportradar: partidos en vivo (si hay key configurada) ─
+        if sprt._ok():
+            sr_live = sprt.get_live_matches()
+            if sr_live:
+                existing = {(m['homeTeam'], m['awayTeam']) for m in data}
+                for m in sr_live:
+                    key = (m['homeTeam'], m['awayTeam'])
+                    if key not in existing:
+                        data.append(m)
+                        existing.add(key)
+                    else:
+                        # Actualizar score con datos de Sportradar (más precisos)
+                        for i, em in enumerate(data):
+                            if (em['homeTeam'], em['awayTeam']) == key:
+                                data[i]['homeScore'] = m['homeScore']
+                                data[i]['awayScore'] = m['awayScore']
+                                data[i]['clock']     = m.get('clock', '')
+                                data[i]['period']    = m.get('period', 0)
+                                break
+
+        # ── Fixtures futuros (soccer de TheSportsDB/FootballData) ─
         fixtures = glai.get_fixtures()
         if fixtures:
             existing = {(m['homeTeam'], m['awayTeam']) for m in data}
@@ -183,6 +209,7 @@ def matches():
                         'sport':     'soccer',
                     })
                     existing.add(key)
+
         return jsonify({'matches': data, 'total': len(data)})
     except Exception as e:
         return jsonify({'error': str(e), 'matches': []}), 500
@@ -195,6 +222,53 @@ def match_detail(league, event_id):
         return jsonify(data or {})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ════════════════════════════════════════════════════════════════
+# RUTAS — SPORTRADAR (nuevo)
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/sportradar/status')
+@require_admin
+def sportradar_status():
+    """Verifica si Sportradar está conectado y funcionando."""
+    return jsonify(sprt.status())
+
+@app.route('/api/sportradar/live')
+@require_login
+def sportradar_live():
+    """Partidos en vivo de Sportradar."""
+    if not sprt._ok():
+        return jsonify({'error': 'Sportradar no configurado', 'matches': []}), 503
+    try:
+        matches = sprt.get_live_matches()
+        return jsonify({'matches': matches, 'total': len(matches), 'source': 'sportradar'})
+    except Exception as e:
+        return jsonify({'error': str(e), 'matches': []}), 500
+
+@app.route('/api/sportradar/today')
+@require_login
+def sportradar_today():
+    """Partidos de hoy según Sportradar."""
+    if not sprt._ok():
+        return jsonify({'error': 'Sportradar no configurado', 'matches': []}), 503
+    try:
+        matches = sprt.get_today_schedule()
+        return jsonify({'matches': matches, 'total': len(matches), 'source': 'sportradar'})
+    except Exception as e:
+        return jsonify({'error': str(e), 'matches': []}), 500
+
+@app.route('/api/sportradar/scan', methods=['POST'])
+@require_admin
+def sportradar_scan():
+    """Lanza scan histórico de Sportradar para entrenar GLAI."""
+    if not sprt._ok():
+        return jsonify({'ok': False, 'msg': 'Sportradar no configurado — agrega la API key'}), 503
+    data = request.get_json() or {}
+    days = int(data.get('days', 7))
+    def _run():
+        sprt.scan(days_back=days, glai=glai)
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'msg': f'Scan Sportradar iniciado ({days} días)'})
 
 # ════════════════════════════════════════════════════════════════
 # RUTAS — GLAI IA
@@ -446,7 +520,6 @@ def admin_trigger_scan():
     return jsonify({'ok': True, 'msg': f'Scan histórico iniciado ({days} días)'})
 
 # ════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════
 # RUTAS — PARTIDOS CLAVE (alertas VIP)
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/glai/key-matches', methods=['POST'])
@@ -516,6 +589,10 @@ def save_key():
     if not name or not value:
         return jsonify({'error': 'Nombre y valor requeridos'}), 400
     db.save_key(name, value)
+    # Si guardaron la key de Sportradar, recargar el scraper
+    if name.lower() in ('sportradar', 'sportradar_api_key'):
+        sprt.api_key = value
+        print(f"[Server] ✅ Sportradar API key actualizada desde panel admin")
     return jsonify({'ok': True, 'msg': f'Key "{name}" guardada'})
 
 # ════════════════════════════════════════════════════════════════
@@ -542,6 +619,7 @@ if __name__ == '__main__':
     print(f"  🧠 GLAI aprende sola cada 2 horas (APScheduler)")
     print(f"  💾 Base de datos: soccer_predictor.db")
     print(f"  👤 Admin: usuario=admin / contraseña=admin123")
+    print(f"  🏟️  Sportradar: {'✅ conectado' if sprt._ok() else '⚠️ sin key'}")
     print("="*55 + "\n")
     # Primer scan al iniciar (en background, no bloquea)
     import threading
