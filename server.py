@@ -537,10 +537,13 @@ def glai_parlay():
                 best_p = max(pred.get('pHome', 50), pred.get('pAway', 50)) / 100
 
             else:  # soccer
-                hist_a = glai.team_history(team_a, limit=5)
-                hist_b = glai.team_history(team_b, limit=5)
-                pred    = glai.predict('soccer', league, val_a, val_b)
-                bet     = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b)
+                hist_a = glai.team_history(team_a, limit=8)
+                hist_b = glai.team_history(team_b, limit=8)
+                h2h_p  = db.get_h2h_results(team_a, team_b, limit=6)
+                pred    = glai.predict('soccer', league, val_a, val_b,
+                                       team_a=team_a, team_b=team_b)
+                bet     = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b,
+                                      h2h=h2h_p)
                 corners = glai.predict_corners_cards(val_a, val_b, league)
                 entry.update({'prediction': pred, 'bet': bet,
                                'corners': corners, 'histA': hist_a, 'histB': hist_b})
@@ -839,8 +842,11 @@ def glai_analyze():
 
         # ── SOCCER (default) ────────────────────────────────────────────
         # Historial desde DB local (rápido, sin llamadas externas)
-        hist_a = glai.team_history(team_a, limit=5) if team_a else []
-        hist_b = glai.team_history(team_b, limit=5) if team_b else []
+        hist_a = glai.team_history(team_a, limit=8) if team_a else []
+        hist_b = glai.team_history(team_b, limit=8) if team_b else []
+
+        # H2H — enfrentamientos directos
+        h2h = db.get_h2h_results(team_a, team_b, limit=8) if (team_a and team_b) else []
 
         # TheSportsDB en hilo separado — no bloquea el análisis
         def _fetch_tsdb():
@@ -851,9 +857,11 @@ def glai_analyze():
                 pass
         threading.Thread(target=_fetch_tsdb, daemon=True).start()
 
-        prediction    = glai.predict('soccer', league, val_a, val_b)
-        # ✅ ai_bet NO recibe h2h — se quitó el parámetro que no existía
-        bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b)
+        # Predict v2: pasa team_a/team_b para strength ratings + Dixon-Coles
+        prediction    = glai.predict('soccer', league, val_a, val_b,
+                                     team_a=team_a, team_b=team_b)
+        bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b,
+                                    h2h=h2h)
         corners_cards = glai.predict_corners_cards(val_a, val_b, league)
         lg_stats      = glai.get_league_stats('soccer', league)
 

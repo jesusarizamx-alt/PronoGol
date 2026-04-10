@@ -44,87 +44,206 @@ class GLAIEngine:
         except Exception:
             return 0.0
 
-    def predict(self, sport, league_id, home_xg, away_xg, max_goals=7):
+    def _dc_correction(self, h, a, lam_h, lam_a, rho=-0.10):
+        """
+        Dixon-Coles (1997) ρ-correction para marcadores bajos.
+        Corrige la sobrestimación / subestimación del Poisson puro
+        en partidos de 0-0, 1-0, 0-1 y 1-1.
+        rho negativo es el valor estándar calibrado en fútbol.
+        """
+        if h == 0 and a == 0:
+            return max(0.01, 1 - lam_h * lam_a * rho)
+        elif h == 0 and a == 1:
+            return max(0.01, 1 + lam_h * rho)
+        elif h == 1 and a == 0:
+            return max(0.01, 1 + lam_a * rho)
+        elif h == 1 and a == 1:
+            return max(0.01, 1 - rho)
+        return 1.0
+
+    def _weighted_avg(self, arr, key, decay=0.82):
+        """
+        Promedio con decaimiento exponencial.
+        El partido más reciente (índice 0) tiene peso 1.0,
+        el siguiente 0.82, luego 0.67, 0.55, ...
+        Esto da ~60% del peso a los últimos 3 partidos.
+        """
+        if not arr:
+            return 0.0
+        total_w = total_v = 0.0
+        for i, item in enumerate(arr):
+            w = decay ** i
+            v = item.get(key) or 0
+            total_w += w
+            total_v += w * float(v)
+        return total_v / total_w if total_w else 0.0
+
+    def predict(self, sport, league_id, home_xg, away_xg, max_goals=7,
+                team_a=None, team_b=None):
         """
         Genera matriz de marcadores y probabilidades 1X2.
-        home_xg / away_xg: goles esperados (del modelo base o del frontend).
-        Opcionalmente ajusta con estadísticas históricas de la liga.
+        home_xg / away_xg: goles esperados base.
+
+        Mejoras v2:
+        - Ajuste por estadísticas de liga con blend proporcional al tamaño
+        - Fuerza relativa del equipo (attack/defense ratings) cuando hay historial
+        - Corrección Dixon-Coles para marcadores bajos (0-0, 1-0, 0-1, 1-1)
+        - Blend final con tasas históricas de victorias de la liga
         """
         lg = self.get_league_stats(sport, league_id)
 
-        # Ajustar xG con datos históricos de la liga (si hay suficientes)
+        # ── Paso 1: xG base ajustado con media de liga ────────────────
         adj_home_xg = home_xg
         adj_away_xg = away_xg
         if lg and lg['n'] >= 10:
-            blend = min(0.35, lg['n'] / 300)
-            adj_home_xg = home_xg * (1 - blend) + lg['avgHG'] * blend
-            adj_away_xg = away_xg * (1 - blend) + lg['avgAG'] * blend
+            blend_lg = min(0.30, lg['n'] / 350)
+            adj_home_xg = home_xg * (1 - blend_lg) + lg['avgHG'] * blend_lg
+            adj_away_xg = away_xg * (1 - blend_lg) + lg['avgAG'] * blend_lg
 
-        # Matriz de probabilidades de marcador
+        # ── Paso 2: Ajuste por fuerza del equipo (si hay historial) ───
+        data_quality = 0  # 0-100
+        strength_info = {}
+        if team_a and team_b and lg and lg['n'] >= 15:
+            str_a = self.get_team_strength(team_a, sport, league_id, lg)
+            str_b = self.get_team_strength(team_b, sport, league_id, lg)
+            n_data = min(str_a['n'], str_b['n'])
+
+            if n_data >= 5:
+                # xG basado en: ataque propio × defensa rival × media de liga
+                blend_str = min(0.55, n_data / 40)
+                lg_avg = (lg['avgHG'] + lg['avgAG']) / 2
+                str_home = str_a['attack'] * str_b['defense'] * lg['avgHG']
+                str_away = str_b['attack'] * str_a['defense'] * lg['avgAG']
+                adj_home_xg = adj_home_xg * (1 - blend_str) + str_home * blend_str
+                adj_away_xg = adj_away_xg * (1 - blend_str) + str_away * blend_str
+                data_quality = min(95, 30 + n_data * 4)
+                strength_info = {
+                    'attackA': str_a['attack'], 'defA': str_a['defense'],
+                    'attackB': str_b['attack'], 'defB': str_b['defense'],
+                    'nA': str_a['n'], 'nB': str_b['n'],
+                }
+            elif n_data > 0:
+                data_quality = min(30, n_data * 6)
+        elif lg and lg['n'] >= 10:
+            data_quality = min(25, lg['n'] // 5)
+
+        adj_home_xg = max(0.15, adj_home_xg)
+        adj_away_xg = max(0.10, adj_away_xg)
+
+        # ── Paso 3: Matriz Poisson con corrección Dixon-Coles ──────────
         matrix = []
-        p_home = 0.0
-        p_draw = 0.0
-        p_away = 0.0
+        p_home = p_draw = p_away = 0.0
 
         for h in range(max_goals + 1):
             for a in range(max_goals + 1):
-                p = self._poisson(adj_home_xg, h) * self._poisson(adj_away_xg, a)
+                raw_p = self._poisson(adj_home_xg, h) * self._poisson(adj_away_xg, a)
+                dc    = self._dc_correction(h, a, adj_home_xg, adj_away_xg, rho=-0.10)
+                p     = raw_p * dc
                 matrix.append({'a': h, 'b': a, 'p': round(p, 4)})
-                if h > a:
-                    p_home += p
-                elif h == a:
-                    p_draw += p
-                else:
-                    p_away += p
+                if   h > a: p_home += p
+                elif h == a: p_draw += p
+                else:        p_away += p
 
-        # Normalizar
-        total = p_home + p_draw + p_away
-        if total > 0:
-            p_home /= total
-            p_draw /= total
-            p_away /= total
+        total = p_home + p_draw + p_away or 1
+        p_home /= total; p_draw /= total; p_away /= total
 
-        # Si hay stats históricas, blend con ellas
-        if lg and lg['n'] >= 10:
-            blend = min(0.35, lg['n'] / 300)
-            p_home = p_home * (1 - blend) + lg['homeWinRate'] * blend
-            p_away = p_away * (1 - blend) + lg['awayWinRate'] * blend
-            p_draw = 1 - p_home - p_away
+        # ── Paso 4: Blend con tasas históricas reales de liga ──────────
+        if lg and lg['n'] >= 20:
+            blend_hist = min(0.30, lg['n'] / 400)
+            p_home = p_home * (1 - blend_hist) + lg['homeWinRate'] * blend_hist
+            p_away = p_away * (1 - blend_hist) + lg['awayWinRate'] * blend_hist
+            p_draw = max(0.02, 1 - p_home - p_away)
 
         matrix.sort(key=lambda x: x['p'], reverse=True)
 
-        # BTTS
-        p_btts = (1 - math.exp(-adj_home_xg)) * (1 - math.exp(-adj_away_xg))
-
-        # Over/Under 2.5
+        # ── BTTS y Over/Under ──────────────────────────────────────────
+        p_btts  = (1 - math.exp(-adj_home_xg)) * (1 - math.exp(-adj_away_xg))
         over_25 = sum(
             self._poisson(adj_home_xg, h) * self._poisson(adj_away_xg, a)
             for h in range(max_goals + 1)
             for a in range(max_goals + 1)
             if h + a > 2.5
         )
+        over_15 = sum(
+            self._poisson(adj_home_xg, h) * self._poisson(adj_away_xg, a)
+            for h in range(max_goals + 1)
+            for a in range(max_goals + 1)
+            if h + a > 1.5
+        )
 
         return {
-            'pctA':    round(p_home * 100),
-            'pctD':    round(p_draw * 100),
-            'pctB':    round(p_away * 100),
-            'xgA':     round(adj_home_xg, 2),
-            'xgB':     round(adj_away_xg, 2),
-            'btts':    round(p_btts * 100),
-            'over25':  round(over_25 * 100),
-            'matrix':  matrix[:10],
-            'lgStats': lg,
+            'pctA':         round(p_home * 100),
+            'pctD':         round(p_draw * 100),
+            'pctB':         round(p_away * 100),
+            'xgA':          round(adj_home_xg, 2),
+            'xgB':          round(adj_away_xg, 2),
+            'btts':         round(p_btts * 100),
+            'over25':       round(over_25 * 100),
+            'over15':       round(over_15 * 100),
+            'matrix':       matrix[:10],
+            'lgStats':      lg,
             'totalLearned': self.total_learned(),
+            'dataQuality':  data_quality,
+            'strength':     strength_info,
+            'model':        'poisson-dc-v2',
+        }
+
+    def get_team_strength(self, team, sport, league_id, lg=None):
+        """
+        Calcula fuerza relativa del equipo (ataque/defensa) vs. media de liga.
+        attack > 1.0 = ataca mejor que la media
+        defense < 1.0 = concede menos que la media (buena defensa)
+        """
+        if lg is None:
+            lg = self.get_league_stats(sport, league_id)
+        if not lg or lg['n'] < 5:
+            return {'attack': 1.0, 'defense': 1.0, 'n': 0}
+
+        rows = self.db.get_team_results(team, 20)
+        if not rows:
+            return {'attack': 1.0, 'defense': 1.0, 'n': 0}
+
+        is_home_flags = [team[:6].lower() in r['home_team'].lower() for r in rows]
+        scored   = [r['home_goals'] if ih else r['away_goals']  for r, ih in zip(rows, is_home_flags)]
+        conceded = [r['away_goals'] if ih else r['home_goals']  for r, ih in zip(rows, is_home_flags)]
+
+        n = len(rows)
+        avg_scored   = sum(scored) / n
+        avg_conceded = sum(conceded) / n
+        league_avg   = (lg['avgHG'] + lg['avgAG']) / 2 or 1.3
+
+        attack  = avg_scored   / league_avg
+        defense = avg_conceded / league_avg   # < 1 es bueno (conceden menos que media)
+
+        # Forma reciente (últimos 5) con peso extra
+        recent = rows[:5]
+        if recent:
+            r_scored = [r['home_goals'] if team[:6].lower() in r['home_team'].lower()
+                        else r['away_goals'] for r in recent]
+            r_wgt = sum(0.82 ** i * g for i, g in enumerate(r_scored))
+            r_w   = sum(0.82 ** i      for i in range(len(recent)))
+            form_attack = (r_wgt / r_w) / league_avg if r_w else attack
+            attack = attack * 0.5 + form_attack * 0.5  # blend: historial + forma
+
+        return {
+            'attack':       round(max(0.1, attack),  3),
+            'defense':      round(max(0.1, defense), 3),
+            'avgScored':    round(avg_scored, 2),
+            'avgConceded':  round(avg_conceded, 2),
+            'n':            n,
         }
 
     # ─── Historial por equipo ─────────────────────────────────────
     def team_history(self, team_name, limit=5):
-        """Últimos N partidos de un equipo — todas las competencias."""
-        results = self.db.get_team_results(team_name, limit * 3)
+        """
+        Últimos N partidos de un equipo — todas las competencias.
+        v2: incluye splits home/away y racha de forma.
+        """
+        results = self.db.get_team_results(team_name, limit * 4)
         hist = []
         seen = set()
         for r in results:
-            key = f"{r['event_id'] or r['id']}"
+            key = str(r['event_id'] or r['id'])
             if key in seen:
                 continue
             seen.add(key)
@@ -134,102 +253,217 @@ class GLAIEngine:
             opp    = r['away_team'] if is_home else r['home_team']
             result = 'G' if my_g > opp_g else ('P' if my_g < opp_g else 'E')
             hist.append({
-                'result':  result,
-                'myG':     my_g,
-                'oppG':    opp_g,
-                'opp':     opp,
-                'comp':    r['league_id'],
-                'isHome':  is_home,
-                'source':  r['source'],
+                'result':    result,
+                'myG':       my_g,
+                'oppG':      opp_g,
+                'opp':       opp,
+                'comp':      r['league_id'],
+                'isHome':    is_home,
+                'source':    r['source'],
+                'learnedAt': r.get('learned_at', ''),
             })
             if len(hist) >= limit:
                 break
         return hist
 
-    # ─── Análisis de apuesta IA ───────────────────────────────────
-    def ai_bet(self, hist_a, hist_b, xg_a, xg_b, team_a, team_b):
+    def team_history_split(self, team_name, limit=10):
+        """
+        Historial separado: últimos N como local y N como visitante.
+        Útil para calcular rendimiento home vs. away correctamente.
+        """
+        results = self.db.get_team_results(team_name, limit * 6)
+        home_hist = []
+        away_hist = []
+        seen = set()
+        for r in results:
+            key = str(r['event_id'] or r['id'])
+            if key in seen:
+                continue
+            seen.add(key)
+            is_home = team_name.lower()[:6] in r['home_team'].lower()
+            my_g  = r['home_goals'] if is_home else r['away_goals']
+            opp_g = r['away_goals'] if is_home else r['home_goals']
+            entry = {
+                'result': 'G' if my_g > opp_g else ('P' if my_g < opp_g else 'E'),
+                'myG':    my_g, 'oppG': opp_g,
+            }
+            if is_home and len(home_hist) < limit:
+                home_hist.append(entry)
+            elif not is_home and len(away_hist) < limit:
+                away_hist.append(entry)
+            if len(home_hist) >= limit and len(away_hist) >= limit:
+                break
+        return {'home': home_hist, 'away': away_hist}
+
+    # ─── Análisis de apuesta IA v2 ────────────────────────────────
+    def ai_bet(self, hist_a, hist_b, xg_a, xg_b, team_a, team_b,
+               h2h=None):
         """
         Genera recomendación de apuesta basada en historial real.
-        hist_a / hist_b: listas de dicts con 'myG', 'oppG', 'result'.
+        v2: promedio ponderado con decay exponencial, splits home/away,
+        integración de H2H, y puntuación de confianza de datos.
+
+        hist_a / hist_b: listas con 'myG', 'oppG', 'result', 'isHome'
+        h2h: lista de enfrentamientos directos (opcional)
         """
+        # ── Promedios ponderados con decay ──────────────────────────
+        wgt_scored_a   = self._weighted_avg(hist_a, 'myG')
+        wgt_conceded_a = self._weighted_avg(hist_a, 'oppG')
+        wgt_scored_b   = self._weighted_avg(hist_b, 'myG')
+        wgt_conceded_b = self._weighted_avg(hist_b, 'oppG')
+
+        # Simple avg para compatibilidad con respuesta
         def avg(arr, key):
             return sum(m[key] for m in arr) / len(arr) if arr else 0
-
-        avg_scored_a = avg(hist_a, 'myG')
+        avg_scored_a   = avg(hist_a, 'myG')
         avg_conceded_a = avg(hist_a, 'oppG')
-        avg_scored_b = avg(hist_b, 'myG')
+        avg_scored_b   = avg(hist_b, 'myG')
         avg_conceded_b = avg(hist_b, 'oppG')
 
         has_real = len(hist_a) >= 2 or len(hist_b) >= 2
 
-        cross_xg_a = (avg_scored_a + avg_conceded_b) / 2 if has_real else xg_a
-        cross_xg_b = (avg_scored_b + avg_conceded_a) / 2 if has_real else xg_b
+        # ── xG cruzado (ataque A vs. defensa B y viceversa) ─────────
+        # Usa promedios ponderados para más precisión
+        if has_real:
+            cross_xg_a = (wgt_scored_a + wgt_conceded_b) / 2
+            cross_xg_b = (wgt_scored_b + wgt_conceded_a) / 2
+        else:
+            cross_xg_a = xg_a
+            cross_xg_b = xg_b
         cross_total = cross_xg_a + cross_xg_b
 
-        def rate(arr, fn):
-            return sum(1 for m in arr if fn(m)) / len(arr) if arr else 0.5
+        # ── H2H: blend directo si hay suficientes ───────────────────
+        h2h_info = {}
+        if h2h and len(h2h) >= 3:
+            h2h_goals = [(r['home_goals'] + r['away_goals']) for r in h2h]
+            h2h_avg   = sum(h2h_goals) / len(h2h_goals)
+            h2h_wins_a = sum(
+                1 for r in h2h
+                if (team_a[:6].lower() in r['home_team'].lower() and r['home_goals'] > r['away_goals'])
+                or (team_a[:6].lower() in r['away_team'].lower() and r['away_goals'] > r['home_goals'])
+            )
+            h2h_win_rate_a = h2h_wins_a / len(h2h)
+            # Blend del total esperado con H2H
+            cross_total = cross_total * 0.70 + h2h_avg * 0.30
+            cross_xg_a  = cross_xg_a  * 0.80 + (h2h_avg * 0.50) * 0.20
+            cross_xg_b  = cross_xg_b  * 0.80 + (h2h_avg * 0.50) * 0.20
+            h2h_info = {
+                'n': len(h2h),
+                'avgGoals': round(h2h_avg, 1),
+                'winRateA': round(h2h_win_rate_a * 100),
+            }
 
-        btts_a = rate(hist_a, lambda m: m['myG'] > 0 and m['oppG'] > 0)
-        btts_b = rate(hist_b, lambda m: m['myG'] > 0 and m['oppG'] > 0)
+        # ── Tasas ponderadas con decay ───────────────────────────────
+        def wgt_rate(arr, fn, decay=0.82):
+            if not arr:
+                return 0.5
+            total_w = total_v = 0.0
+            for i, m in enumerate(arr):
+                w = decay ** i
+                total_w += w
+                total_v += w * (1.0 if fn(m) else 0.0)
+            return total_v / total_w if total_w else 0.5
+
+        btts_a = wgt_rate(hist_a, lambda m: m['myG'] > 0 and m['oppG'] > 0)
+        btts_b = wgt_rate(hist_b, lambda m: m['myG'] > 0 and m['oppG'] > 0)
         btts_comb = round((btts_a + btts_b) / 2 * 100)
 
-        o25_a = rate(hist_a, lambda m: m['myG'] + m['oppG'] > 2.5)
-        o25_b = rate(hist_b, lambda m: m['myG'] + m['oppG'] > 2.5)
+        o25_a = wgt_rate(hist_a, lambda m: m['myG'] + m['oppG'] > 2.5)
+        o25_b = wgt_rate(hist_b, lambda m: m['myG'] + m['oppG'] > 2.5)
         o25_comb = round((o25_a + o25_b) / 2 * 100)
 
-        o15_a = rate(hist_a, lambda m: m['myG'] + m['oppG'] > 1.5)
-        o15_b = rate(hist_b, lambda m: m['myG'] + m['oppG'] > 1.5)
+        o15_a = wgt_rate(hist_a, lambda m: m['myG'] + m['oppG'] > 1.5)
+        o15_b = wgt_rate(hist_b, lambda m: m['myG'] + m['oppG'] > 1.5)
         o15_comb = round((o15_a + o15_b) / 2 * 100)
 
-        win_a = rate(hist_a, lambda m: m['result'] == 'G')
-        win_b = rate(hist_b, lambda m: m['result'] == 'G')
+        win_a = wgt_rate(hist_a, lambda m: m['result'] == 'G')
+        win_b = wgt_rate(hist_b, lambda m: m['result'] == 'G')
 
+        # ── Splits home/away ─────────────────────────────────────────
+        home_a = [m for m in hist_a if m.get('isHome', True)]
+        away_b = [m for m in hist_b if not m.get('isHome', True)]
+        home_win_a = wgt_rate(home_a, lambda m: m['result'] == 'G') if home_a else win_a
+        away_win_b = wgt_rate(away_b, lambda m: m['result'] == 'G') if away_b else win_b
+
+        # ── Puntuación de confianza (0-100) ──────────────────────────
+        n_total = len(hist_a) + len(hist_b)
+        h2h_bonus = min(10, (h2h_info.get('n', 0)) * 2) if h2h_info else 0
+        confidence_score = min(95, round(
+            (min(n_total, 20) / 20) * 70     # hasta 70 pts por volumen de datos
+            + h2h_bonus                       # hasta 10 pts por H2H
+            + (10 if has_real else 0)         # 10 pts por datos reales
+            + (5  if len(hist_a) >= 3 and len(hist_b) >= 3 else 0)
+        ))
+
+        # ── Señales de apuesta ───────────────────────────────────────
         bets = []
+
         if btts_comb >= 60:
             bets.append({'bet': 'Ambos Anotan — SÍ', 'conf': btts_comb,
-                         'reason': f'{btts_comb}% de sus partidos recientes terminaron con goles de ambos lados'})
-        if btts_comb <= 38:
+                         'reason': f'Tasa BTTS ponderada {btts_comb}% · xG total proyectado {cross_total:.2f}'})
+        if btts_comb <= 36:
             bets.append({'bet': 'Ambos Anotan — NO', 'conf': 100 - btts_comb,
-                         'reason': f'Solo {btts_comb}% de sus partidos tuvieron BTTS — portería a cero es frecuente'})
+                         'reason': f'Solo {btts_comb}% BTTS en historial reciente — portería a cero probable'})
         if o25_comb >= 62:
             bets.append({'bet': 'Más de 2.5 Goles', 'conf': o25_comb,
-                         'reason': f'{o25_comb}% de sus partidos recientes superaron 2.5 goles · xG cruzado: {cross_total:.2f}'})
+                         'reason': f'{o25_comb}% Over 2.5 ponderado · xG cruzado: {cross_total:.2f}'})
         if o25_comb <= 36:
             bets.append({'bet': 'Menos de 2.5 Goles', 'conf': 100 - o25_comb,
-                         'reason': f'Solo {o25_comb}% de sus partidos superaron 2.5 goles — partidos cerrados son la norma'})
+                         'reason': f'Solo {o25_comb}% Over 2.5 — partidos cerrados son la norma'})
         if o15_comb >= 80:
             bets.append({'bet': 'Más de 1.5 Goles', 'conf': o15_comb,
-                         'reason': f'{o15_comb}% de sus partidos tienen al menos 2 goles — apuesta de alta seguridad'})
-        if win_a >= 0.70 and len(hist_a) >= 4:
-            bets.append({'bet': f'{team_a} Gana o Empate', 'conf': min(88, round(win_a * 100) + 8),
-                         'reason': f'{team_a} gana {round(win_a*100)}% de sus últimos partidos'})
-        if win_b >= 0.70 and len(hist_b) >= 4:
-            bets.append({'bet': f'{team_b} Gana (Sorpresa)', 'conf': min(85, round(win_b * 100)),
-                         'reason': f'{team_b} gana {round(win_b*100)}% de sus últimos partidos — visita en racha'})
+                         'reason': f'{o15_comb}% de sus partidos recientes superan 1.5 — apuesta de alta seguridad'})
+
+        # Ventaja local ponderada por splits home/away
+        if home_win_a >= 0.68 and len(home_a) >= 3:
+            bets.append({'bet': f'{team_a} Gana (Local)', 'conf': min(84, round(home_win_a * 100) + 5),
+                         'reason': f'{team_a} gana {round(home_win_a*100)}% en casa (historial ponderado)'})
+        elif win_a >= 0.70 and len(hist_a) >= 4:
+            bets.append({'bet': f'{team_a} Gana o Empate', 'conf': min(82, round(win_a * 100) + 6),
+                         'reason': f'{team_a} gana {round(win_a*100)}% de sus últimos partidos (decay ponderado)'})
+
+        if away_win_b >= 0.65 and len(away_b) >= 3:
+            bets.append({'bet': f'{team_b} Gana (Visitante)', 'conf': min(80, round(away_win_b * 100)),
+                         'reason': f'{team_b} gana {round(away_win_b*100)}% fuera de casa — visita sólida'})
+        elif win_b >= 0.70 and len(hist_b) >= 4:
+            bets.append({'bet': f'{team_b} Gana (Sorpresa)', 'conf': min(78, round(win_b * 100)),
+                         'reason': f'{team_b} en racha: gana {round(win_b*100)}% de sus últimos partidos'})
+
+        # Señal H2H directa
+        if h2h_info and h2h_info.get('winRateA', 50) >= 70:
+            bets.append({'bet': f'{team_a} Gana (Historial H2H)', 'conf': h2h_info['winRateA'],
+                         'reason': f'En los últimos {h2h_info["n"]} enfrentamientos directos, {team_a} ganó {h2h_info["winRateA"]}%'})
 
         # Fallback si no hay señal fuerte
         if not bets:
             if cross_total >= 2.6:
-                bets.append({'bet': 'Más de 2.5 Goles', 'conf': round(50 + (cross_total - 2.5) * 18),
+                bets.append({'bet': 'Más de 2.5 Goles', 'conf': min(72, round(50 + (cross_total - 2.5) * 16)),
                              'reason': f'xG cruzado IA: {cross_total:.2f} goles proyectados'})
             else:
-                bets.append({'bet': 'Menos de 2.5 Goles', 'conf': round(50 + (2.5 - cross_total) * 18),
+                bets.append({'bet': 'Menos de 2.5 Goles', 'conf': min(72, round(50 + (2.5 - cross_total) * 16)),
                              'reason': f'xG cruzado IA: {cross_total:.2f} — partido de bajo puntaje esperado'})
 
         bets.sort(key=lambda x: x['conf'], reverse=True)
         return {
-            'best':       bets[0] if bets else None,
-            'alt':        bets[1] if len(bets) > 1 else None,
-            'crossXgA':   round(cross_xg_a, 2),
-            'crossXgB':   round(cross_xg_b, 2),
-            'crossTotal': round(cross_total, 2),
-            'btts':       btts_comb,
-            'over25':     o25_comb,
-            'avgScoredA': round(avg_scored_a, 1),
-            'avgConcededA': round(avg_conceded_a, 1),
-            'avgScoredB': round(avg_scored_b, 1),
-            'avgConcededB': round(avg_conceded_b, 1),
-            'hasRealData': has_real,
+            'best':            bets[0] if bets else None,
+            'alt':             bets[1] if len(bets) > 1 else None,
+            'crossXgA':        round(cross_xg_a, 2),
+            'crossXgB':        round(cross_xg_b, 2),
+            'crossTotal':      round(cross_total, 2),
+            'btts':            btts_comb,
+            'over25':          o25_comb,
+            'over15':          o15_comb,
+            'avgScoredA':      round(avg_scored_a, 1),
+            'avgConcededA':    round(avg_conceded_a, 1),
+            'avgScoredB':      round(avg_scored_b, 1),
+            'avgConcededB':    round(avg_conceded_b, 1),
+            'wgtScoredA':      round(wgt_scored_a, 2),
+            'wgtScoredB':      round(wgt_scored_b, 2),
+            'hasRealData':     has_real,
+            'confidenceScore': confidence_score,
+            'h2h':             h2h_info,
+            'homeWinA':        round(home_win_a * 100),
+            'awayWinB':        round(away_win_b * 100),
         }
 
     # ─── Predicción de esquinas y tarjetas ───────────────────────────
