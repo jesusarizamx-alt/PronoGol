@@ -353,6 +353,12 @@ nav button.active{font-weight:700}
         </div>
       </div>
 
+      <!-- Head-to-Head -->
+      <div class="card" id="h2hCard" style="display:none">
+        <h2>⚔️ Head-to-Head — Historial Directo</h2>
+        <div id="h2hContent"></div>
+      </div>
+
       <!-- Narrativa GLAI -->
       <div class="card">
         <h2>📝 Análisis Narrativo GLAI</h2>
@@ -1103,8 +1109,11 @@ function renderGlai(d, teamA, teamB) {
   renderHistory('A', histA, teamA, pred.xgA);
   renderHistory('B', histB, teamB, pred.xgB);
 
+  // ── Head-to-Head ────────────────────────────────
+  renderH2H(d.h2h || null, teamA, teamB);
+
   // ── Narrativa ───────────────────────────────────
-  document.getElementById('narrative').textContent = buildNarrative(teamA, teamB, pred, bet, histA, histB, lg);
+  document.getElementById('narrative').textContent = buildNarrative(teamA, teamB, pred, bet, histA, histB, lg, d.h2h);
 
   // ── Stats de liga ───────────────────────────────
   if (lg && lg.n >= 5) {
@@ -1158,7 +1167,49 @@ function renderHistory(side, hist, teamName, xg) {
     </div>`;
 }
 
-function buildNarrative(tA, tB, pred, bet, hA, hB, lg) {
+function renderH2H(h2h, teamA, teamB) {
+  const card = document.getElementById('h2hCard');
+  const el   = document.getElementById('h2hContent');
+  if (!h2h || !h2h.total) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const pA = h2h.pctA || 0, pB = h2h.pctB || 0, pD = h2h.pctD || 0;
+  const dominator = pA > pB && pA > pD ? teamA : (pB > pA && pB > pD ? teamB : 'Equilibrado');
+
+  let html = `
+    <div style="margin-bottom:14px">
+      <div style="font-size:.75rem;color:var(--muted);margin-bottom:8px">
+        Últimos ${h2h.total} enfrentamientos ·
+        <span style="color:var(--green);font-weight:700">${dominator === 'Equilibrado' ? '⚖️ Historial equilibrado' : '👑 ' + dominator + ' domina el H2H'}</span>
+      </div>
+      <div style="display:flex;border-radius:8px;overflow:hidden;height:38px;margin-bottom:12px">
+        <div style="width:${pA}%;background:#1565c0;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700">${pA > 10 ? pA + '%' : ''}</div>
+        <div style="width:${pD}%;background:#424242;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700">${pD > 10 ? pD + '%' : ''}</div>
+        <div style="width:${pB}%;background:#b71c1c;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700">${pB > 10 ? pB + '%' : ''}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <span class="tag tag-blue">🏠 ${teamA}: ${h2h.winsA} victorias</span>
+        <span class="tag" style="background:#37474f1a;color:#78909c;border:1px solid #78909c66">Empates: ${h2h.draws}</span>
+        <span class="tag tag-orange">✈️ ${teamB}: ${h2h.winsB} victorias</span>
+      </div>
+    </div>
+    <div style="font-size:.8rem;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:1px">ÚLTIMOS ENFRENTAMIENTOS</div>
+    ${h2h.matches.slice(0, 5).map(m => {
+      const color = m.result === 'A' ? 'var(--blue)' : m.result === 'B' ? 'var(--red)' : '#78909c';
+      const label = m.result === 'A' ? teamA : m.result === 'B' ? teamB : 'Empate';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)30">
+        <span style="font-size:.75rem;color:var(--muted);min-width:60px">${(m.league||'').toUpperCase().slice(0,8)}</span>
+        <span style="flex:1;text-align:right;font-size:.85rem">${m.homeTeam}</span>
+        <span style="font-weight:900;font-size:1rem;padding:0 10px;color:var(--text)">${m.homeGoals} - ${m.awayGoals}</span>
+        <span style="flex:1;font-size:.85rem">${m.awayTeam}</span>
+        <span style="font-size:.72rem;font-weight:700;color:${color};min-width:60px;text-align:right">${label}</span>
+      </div>`;
+    }).join('')}`;
+
+  el.innerHTML = html;
+}
+
+function buildNarrative(tA, tB, pred, bet, hA, hB, lg, h2h) {
   const pA = pred.pctA || 0, pD = pred.pctD || 0, pB = pred.pctB || 0;
   const winner = pA > pB && pA > pD ? tA : (pB > pA && pB > pD ? tB : 'un empate');
   const lines = [];
@@ -1172,6 +1223,11 @@ function buildNarrative(tA, tB, pred, bet, hA, hB, lg) {
   if (hB.length >= 2) {
     const wB = hB.filter(h => h.result === 'G').length;
     lines.push(`${tB} cuenta con ${wB}/${hB.length} victorias recientes.`);
+  }
+  if (h2h && h2h.total >= 3) {
+    const h2hDom = h2h.pctA > h2h.pctB ? tA : (h2h.pctB > h2h.pctA ? tB : null);
+    if (h2hDom) lines.push(`En el historial directo (H2H), ${h2hDom} domina con ${Math.max(h2h.pctA, h2h.pctB)}% de victorias en ${h2h.total} enfrentamientos — este factor fue incorporado al modelo.`);
+    else lines.push(`El historial directo (H2H) está equilibrado: ${h2h.winsA} victorias ${tA}, ${h2h.draws} empates, ${h2h.winsB} victorias ${tB}.`);
   }
   if (bet.best) lines.push(`La apuesta con mayor confianza según GLAI es "${bet.best.bet}" (${bet.best.conf}%): ${bet.best.reason}.`);
   if (lg && lg.n >= 10) {
