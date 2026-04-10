@@ -571,6 +571,130 @@ class GLAIEngine:
             'narrative': narrative,
         }
 
+    # ─── Predicciones EN VIVO ─────────────────────────────────────
+
+    def predict_live_soccer(self, home_score, away_score, minute, xg_a, xg_b):
+        """
+        Ajusta probabilidades en vivo según el marcador y el minuto.
+        Mientras más avanza el partido, el marcador actual pesa más.
+        """
+        minute   = max(1, min(90, minute))
+        pct_done = minute / 90.0          # fracción del partido jugada
+        pct_left = 1.0 - pct_done
+
+        # xG restante proporcional al tiempo que queda
+        rem_a = xg_a * pct_left
+        rem_b = xg_b * pct_left
+
+        # Probabilidades Poisson para goles adicionales (máx 5 extra)
+        def p_goals(lam, k):
+            import math
+            try: return math.exp(-lam) * (lam**k) / math.factorial(k)
+            except: return 0.0
+
+        p_home = p_draw = p_away = 0.0
+        for ha in range(6):
+            for aa in range(6):
+                p = p_goals(rem_a, ha) * p_goals(rem_b, aa)
+                final_h = home_score + ha
+                final_a = away_score + aa
+                if   final_h > final_a: p_home += p
+                elif final_h == final_a: p_draw += p
+                else:                    p_away += p
+
+        total = p_home + p_draw + p_away or 1
+        p_home /= total; p_draw /= total; p_away /= total
+
+        # Tendencia: equipo que va ganando tiene momentum extra (5%)
+        if home_score > away_score:
+            p_home = min(0.97, p_home + 0.05)
+            p_away = max(0.01, p_away - 0.03)
+            p_draw = max(0.01, 1 - p_home - p_away)
+        elif away_score > home_score:
+            p_away = min(0.97, p_away + 0.05)
+            p_home = max(0.01, p_home - 0.03)
+            p_draw = max(0.01, 1 - p_home - p_away)
+
+        mins_left = 90 - minute
+        return {
+            'pctA':      round(p_home * 100),
+            'pctD':      round(p_draw * 100),
+            'pctB':      round(p_away * 100),
+            'minsLeft':  mins_left,
+            'xgRemA':    round(rem_a, 2),
+            'xgRemB':    round(rem_b, 2),
+            'scoreA':    home_score,
+            'scoreB':    away_score,
+            'minute':    minute,
+        }
+
+    def predict_live_nba(self, home_pts, away_pts, period, home_ppg, away_ppg):
+        """
+        Proyección de partido NBA en vivo.
+        period 1-4, home_ppg/away_ppg = puntos por partido histórico.
+        """
+        period    = max(1, min(4, period))
+        pct_done  = (period - 1) / 4.0 + 0.5 / 4.0   # asumimos mitad del período
+        pct_left  = max(0.05, 1.0 - pct_done)
+
+        proj_a = home_pts + home_ppg * pct_left
+        proj_b = away_pts + away_ppg * pct_left
+        diff   = proj_a - proj_b
+
+        # Probabilidad de victoria local basada en proyección
+        import math
+        p_home = 1 / (1 + math.exp(-diff / 8))
+        p_away = 1 - p_home
+
+        quarters_left = 4 - period
+        pts_left_a    = round(home_ppg * pct_left)
+        pts_left_b    = round(away_ppg * pct_left)
+
+        return {
+            'pctA':        round(p_home * 100),
+            'pctB':        round(p_away * 100),
+            'projA':       round(proj_a),
+            'projB':       round(proj_b),
+            'ptsLeftA':    pts_left_a,
+            'ptsLeftB':    pts_left_b,
+            'quartersLeft': quarters_left,
+            'scoreA':      home_pts,
+            'scoreB':      away_pts,
+            'period':      period,
+        }
+
+    def predict_live_mlb(self, home_runs, away_runs, inning, half, home_rpg, away_rpg):
+        """
+        Proyección de partido MLB en vivo.
+        inning 1-9, half 'top'/'bottom', home_rpg/away_rpg = carreras por partido.
+        """
+        inning    = max(1, min(9, inning))
+        half_val  = 0.5 if half == 'bottom' else 0.0
+        pct_done  = ((inning - 1) + half_val) / 9.0
+        pct_left  = max(0.05, 1.0 - pct_done)
+
+        proj_a = home_runs + home_rpg * pct_left
+        proj_b = away_runs + away_rpg * pct_left
+        diff   = proj_a - proj_b
+
+        import math
+        p_home = 1 / (1 + math.exp(-diff / 2))
+        p_away = 1 - p_home
+
+        innings_left = 9 - inning
+
+        return {
+            'pctA':        round(p_home * 100),
+            'pctB':        round(p_away * 100),
+            'projA':       round(proj_a, 1),
+            'projB':       round(proj_b, 1),
+            'inningsLeft': innings_left,
+            'scoreA':      home_runs,
+            'scoreB':      away_runs,
+            'inning':      inning,
+            'half':        half,
+        }
+
     def auto_scan(self, days_back=7, sources=None):
         """
         Escaneo autónomo en segundo plano.

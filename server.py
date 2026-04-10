@@ -541,8 +541,11 @@ def glai_analyze():
         if sport == 'nba':
             prediction = glai.predict_nba(val_a, val_b)
             bet        = glai.ai_bet_nba(prediction, team_a, team_b)
-            db.add_log(u['username'], 'analyze', ip=get_client_ip(),
-                       details=f'{team_a} vs {team_b} | nba | PPG:{val_a}-{val_b}')
+            try:
+                db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+                           details=f'{team_a} vs {team_b} | nba | PPG:{val_a}-{val_b}')
+            except Exception:
+                pass  # No crashear el análisis si el log falla por DB lock
             return jsonify({
                 'ok':         True,
                 'sport':      'nba',
@@ -556,8 +559,11 @@ def glai_analyze():
         if sport == 'mlb':
             prediction = glai.predict_mlb(val_a, val_b)
             bet        = glai.ai_bet_mlb(prediction, team_a, team_b)
-            db.add_log(u['username'], 'analyze', ip=get_client_ip(),
-                       details=f'{team_a} vs {team_b} | mlb | RPG:{val_a}-{val_b}')
+            try:
+                db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+                           details=f'{team_a} vs {team_b} | mlb | RPG:{val_a}-{val_b}')
+            except Exception:
+                pass  # No crashear el análisis si el log falla por DB lock
             return jsonify({
                 'ok':         True,
                 'sport':      'mlb',
@@ -592,9 +598,11 @@ def glai_analyze():
         print(f"[GLAI analyze error] {traceback.format_exc()}")
         return jsonify({'error': f'Error en análisis: {str(e)}'}), 500
 
-    # ✅ add_log va ANTES del return para que se ejecute
-    db.add_log(u['username'], 'analyze', ip=get_client_ip(),
-               details=f'{team_a} vs {team_b} | soccer | xG:{val_a}-{val_b}')
+    try:
+        db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+                   details=f'{team_a} vs {team_b} | soccer | xG:{val_a}-{val_b}')
+    except Exception:
+        pass  # No crashear si DB está temporalmente bloqueada
     return jsonify({
         'ok':         True,
         'sport':      'soccer',
