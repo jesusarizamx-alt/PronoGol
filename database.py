@@ -20,14 +20,18 @@ class Database:
     def __init__(self, path=DB_PATH):
         self.path = str(path)
         self._local = threading.local()
+        self._write_lock = threading.Lock()  # evita "database is locked"
         self._init_tables()
 
     def _conn(self):
         if not hasattr(self._local, 'conn') or self._local.conn is None:
-            self._local.conn = sqlite3.connect(self.path, check_same_thread=False)
+            # timeout=30 → espera hasta 30s antes de lanzar OperationalError
+            self._local.conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
             self._local.conn.row_factory = sqlite3.Row
             self._local.conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn.execute("PRAGMA synchronous=NORMAL")   # más rápido y seguro
             self._local.conn.execute("PRAGMA foreign_keys=ON")
+            self._local.conn.execute("PRAGMA busy_timeout=30000")   # 30s busy timeout
         return self._local.conn
 
     def _init_tables(self):
@@ -112,23 +116,24 @@ class Database:
     def learn_result(self, sport, league_id, home_team, away_team,
                      home_goals, away_goals, source='unknown', event_id=None):
         """Guarda un resultado. Ignora duplicados por event_id."""
-        c = self._conn()
-        try:
-            c.execute("""
-                INSERT OR IGNORE INTO match_results
-                (sport, league_id, home_team, away_team, home_goals, away_goals, source, event_id, learned_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
-            """, (sport, league_id, home_team.strip(), away_team.strip(),
-                  int(home_goals), int(away_goals), source, event_id,
-                  datetime.utcnow().isoformat()))
-            inserted = c.rowcount > 0
-            c.commit()
-            if inserted:
-                self._update_league_stats(c, sport, league_id, home_goals, away_goals)
-            return inserted
-        except Exception as e:
-            print(f"[DB] learn_result error: {e}")
-            return False
+        with self._write_lock:
+            c = self._conn()
+            try:
+                c.execute("""
+                    INSERT OR IGNORE INTO match_results
+                    (sport, league_id, home_team, away_team, home_goals, away_goals, source, event_id, learned_at)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                """, (sport, league_id, home_team.strip(), away_team.strip(),
+                      int(home_goals), int(away_goals), source, event_id,
+                      datetime.utcnow().isoformat()))
+                inserted = c.rowcount > 0
+                c.commit()
+                if inserted:
+                    self._update_league_stats(c, sport, league_id, home_goals, away_goals)
+                return inserted
+            except Exception as e:
+                print(f"[DB] learn_result error: {e}")
+                return False
 
     def _update_league_stats(self, c, sport, league_id, hg, ag):
         hg, ag = int(hg), int(ag)
@@ -217,11 +222,13 @@ class Database:
 
     # ─── api_keys ────────────────────────────────────────────────
     def save_key(self, name, value):
-        self._conn().execute("""
-            INSERT OR REPLACE INTO api_keys (key_name, key_value, saved_at)
-            VALUES (?,?,?)
-        """, (name, value, datetime.utcnow().isoformat()))
-        self._conn().commit()
+        with self._write_lock:
+            c = self._conn()
+            c.execute("""
+                INSERT OR REPLACE INTO api_keys (key_name, key_value, saved_at)
+                VALUES (?,?,?)
+            """, (name, value, datetime.utcnow().isoformat()))
+            c.commit()
 
     def get_key(self, name):
         r = self._conn().execute(
