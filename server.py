@@ -18,7 +18,7 @@ from scrapers.thesportsdb import TheSportsDBScraper
 # ── App setup ────────────────────────────────────────────────────
 BASE = Path(__file__).parent
 app = Flask(__name__, static_folder=str(BASE / 'frontend'), static_url_path='')
-app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+app.secret_key = os.environ.get('SECRET_KEY', 'pronogol-default-key-cambiame-en-render')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('RENDER', False)  # HTTPS en Render
 # Permitir cualquier origen (para que funcione en Render.com y local)
@@ -408,6 +408,19 @@ def admin_grant_tokens(username):
     try:
         new_total = users.grant_tokens(username, int(data.get('amount', 0)))
         return jsonify({'ok': True, 'tokens': new_total})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/admin/users/<username>/password', methods=['PATCH'])
+@require_admin
+def admin_reset_password(username):
+    data = request.get_json() or {}
+    new_pw = data.get('password', '').strip()
+    if len(new_pw) < 6:
+        return jsonify({'error': 'La contraseña debe tener al menos 6 caracteres'}), 400
+    try:
+        users.admin_set_password(username, new_pw)
+        return jsonify({'ok': True, 'msg': f'Contraseña de "{username}" actualizada'})
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 

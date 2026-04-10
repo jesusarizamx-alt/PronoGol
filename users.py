@@ -138,6 +138,35 @@ class UserManager:
         c.commit()
         return True
 
+    def change_password(self, username: str, current_password: str, new_password: str) -> bool:
+        """Cambia la contraseña verificando la actual. Retorna True si exitoso."""
+        c = self.db._conn()
+        row = c.execute(
+            "SELECT password_hash FROM users WHERE username=?", (username,)
+        ).fetchone()
+        if not row:
+            return False
+        if row['password_hash'] != self._hash(current_password):
+            return False
+        c.execute(
+            "UPDATE users SET password_hash=? WHERE username=?",
+            (self._hash(new_password), username)
+        )
+        c.commit()
+        return True
+
+    def admin_set_password(self, username: str, new_password: str):
+        """Admin fuerza nueva contraseña sin verificar la actual."""
+        c = self.db._conn()
+        exists = c.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone()
+        if not exists:
+            raise ValueError(f'Usuario "{username}" no encontrado')
+        c.execute(
+            "UPDATE users SET password_hash=? WHERE username=?",
+            (self._hash(new_password), username)
+        )
+        c.commit()
+
     def list_users(self):
         rows = self.db._conn().execute(
             "SELECT * FROM users ORDER BY created_at"
