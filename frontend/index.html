@@ -585,19 +585,26 @@ nav button.active{font-weight:700}
     <div class="card">
       <h2>🧠 Análisis GLAI — IA Autónoma</h2>
       <div id="glaiAccessMsg" style="display:none">
-        <div style="background:linear-gradient(135deg,#0d2137,#1a1a2e);border:1px solid var(--blue);border-radius:14px;padding:24px;text-align:center;margin-bottom:16px">
-          <div style="font-size:2.5rem;margin-bottom:8px">🔒</div>
-          <h3 style="margin-bottom:6px">Agotaste tus análisis gratuitos</h3>
-          <p style="color:var(--muted);font-size:.9rem;margin-bottom:16px">Consigue acceso Premium para análisis ilimitados con IA en Soccer, NBA y MLB</p>
-          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-            <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20acceso%20Premium%20a%20PronoGol%20IA" target="_blank"
-               style="background:linear-gradient(135deg,#ff6d00,#e53935);color:#fff;padding:11px 24px;border-radius:10px;text-decoration:none;font-weight:900;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 16px rgba(255,109,0,.45);animation:pulse 1.8s infinite">
-              🔥 ¡Quiero Premium ahora!
-            </a>
-            <button onclick="closeUpgrade()" style="background:#333;color:#ccc;padding:11px 20px;border-radius:10px;border:none;cursor:pointer;font-weight:700">
-              Ver planes
-            </button>
-          </div>
+        <!-- Mensaje sin tokens -->
+        <div id="glaiNoTokens" style="display:none;background:linear-gradient(135deg,#0d2137,#1a1a2e);border:1px solid var(--blue);border-radius:14px;padding:24px;text-align:center;margin-bottom:16px">
+          <div style="font-size:2.5rem;margin-bottom:8px">🪙</div>
+          <h3 style="margin-bottom:6px">Sin análisis disponibles</h3>
+          <p style="color:var(--muted);font-size:.9rem;margin-bottom:16px">Agotaste tus análisis. Contacta al administrador para recargar.</p>
+          <a href="https://wa.me/525636284497?text=Hola%2C%20necesito%20m%C3%A1s%20an%C3%A1lisis%20en%20PronoGol%20IA" target="_blank"
+             style="background:linear-gradient(135deg,#ff6d00,#e53935);color:#fff;padding:11px 24px;border-radius:10px;text-decoration:none;font-weight:900;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 16px rgba(255,109,0,.45)">
+            🔥 Solicitar recarga
+          </a>
+        </div>
+        <!-- Mensaje cuenta free -->
+        <div id="glaiFreeLock" style="display:none;background:linear-gradient(135deg,#1a0d37,#0d1a2e);border:2px solid #9c27b0;border-radius:14px;padding:28px;text-align:center;margin-bottom:16px">
+          <div style="font-size:2.8rem;margin-bottom:10px">👑</div>
+          <h3 style="margin-bottom:8px;color:#ce93d8">Función exclusiva Premium</h3>
+          <p style="color:var(--muted);font-size:.9rem;margin-bottom:6px">El análisis con IA usa datos en tiempo real de <strong style="color:#fff">Sportradar</strong> + historial de cada equipo.</p>
+          <p style="color:var(--muted);font-size:.85rem;margin-bottom:18px">Disponible solo para cuentas <strong style="color:#ffd700">Premium</strong> y <strong style="color:#9c27b0">Admin</strong>.</p>
+          <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20acceso%20Premium%20a%20PronoGol%20IA" target="_blank"
+             style="background:linear-gradient(135deg,#9c27b0,#673ab7);color:#fff;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:900;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(156,39,176,.5);animation:pulse 1.8s infinite">
+            🚀 ¡Obtener Premium!
+          </a>
         </div>
       </div>
       <div id="glaiForm">
@@ -637,15 +644,7 @@ nav button.active{font-weight:700}
             </select>
           </div>
         </div>
-        <div class="inputRow">
-          <div class="inputGroup" style="max-width:160px">
-            <label id="lblValA">xG Local (A)</label>
-            <input id="xgA" type="number" min="0.1" max="999" step="0.1" value="1.4"/>
-          </div>
-          <div class="inputGroup" style="max-width:160px">
-            <label id="lblValB">xG Visitante (B)</label>
-            <input id="xgB" type="number" min="0.1" max="999" step="0.1" value="1.1"/>
-          </div>
+        <div class="inputRow" style="margin-top:8px">
           <div style="align-self:flex-end">
             <button class="btn btn-green" id="analyzeBtn" onclick="runGlai()" style="width:180px">🧠 Analizar con IA</button>
           </div>
@@ -1411,38 +1410,19 @@ function setGlaiSport(sport, btn) {
   document.getElementById('glaiResults').style.display = 'none';
 
   const leagueGrp = document.getElementById('leagueGroup');
-  const lblA = document.getElementById('lblValA');
-  const lblB = document.getElementById('lblValB');
-  const xgA  = document.getElementById('xgA');
-  const xgB  = document.getElementById('xgB');
-  const tA   = document.getElementById('teamA');
-  const tB   = document.getElementById('teamB');
+  const tA = document.getElementById('teamA');
+  const tB = document.getElementById('teamB');
 
   if (sport === 'nba') {
     leagueGrp.style.display = 'none';
-    lblA.textContent = 'PPG Local (A)';
-    lblB.textContent = 'PPG Visitante (B)';
-    xgA.value = xgA.value < 10 ? '115.0' : xgA.value;
-    xgB.value = xgB.value < 10 ? '112.0' : xgB.value;
-    xgA.step = '0.5'; xgB.step = '0.5';
     if (!tA.placeholder.includes('Lakers')) tA.placeholder = 'Ej: Los Angeles Lakers';
     if (!tB.placeholder.includes('Warriors')) tB.placeholder = 'Ej: Golden State Warriors';
   } else if (sport === 'mlb') {
     leagueGrp.style.display = 'none';
-    lblA.textContent = 'Carreras/Juego (A)';
-    lblB.textContent = 'Carreras/Juego (B)';
-    xgA.value = xgA.value > 15 ? '4.5' : xgA.value;
-    xgB.value = xgB.value > 15 ? '4.2' : xgB.value;
-    xgA.step = '0.1'; xgB.step = '0.1';
     if (!tA.placeholder.includes('Yankees')) tA.placeholder = 'Ej: New York Yankees';
     if (!tB.placeholder.includes('Dodgers')) tB.placeholder = 'Ej: Los Angeles Dodgers';
   } else {
     leagueGrp.style.display = '';
-    lblA.textContent = 'xG Local (A)';
-    lblB.textContent = 'xG Visitante (B)';
-    xgA.value = xgA.value > 15 ? '1.4' : xgA.value;
-    xgB.value = xgB.value > 15 ? '1.1' : xgB.value;
-    xgA.step = '0.1'; xgB.step = '0.1';
     tA.placeholder = 'Ej: Manchester City';
     tB.placeholder = 'Ej: Real Madrid';
   }
@@ -1452,12 +1432,19 @@ function setGlaiSport(sport, btn) {
 // GLAI ANÁLISIS
 // ════════════════════════════════════════════════════
 function refreshGlaiAccess() {
-  const msg  = document.getElementById('glaiAccessMsg');
-  const form = document.getElementById('glaiForm');
-  const noTokens = currentUser.role !== 'admin' && (currentUser.tokens ?? 0) <= 0;
-  msg.style.display  = noTokens ? '' : 'none';
-  form.style.opacity = noTokens ? '0.35' : '';
-  form.style.pointerEvents = noTokens ? 'none' : '';
+  const msg       = document.getElementById('glaiAccessMsg');
+  const form      = document.getElementById('glaiForm');
+  const freeLock  = document.getElementById('glaiFreeLock');
+  const noTokBox  = document.getElementById('glaiNoTokens');
+  const isFree    = currentUser.role === 'free';
+  const noTokens  = !isFree && currentUser.role !== 'admin' && (currentUser.tokens ?? 0) <= 0;
+  const blocked   = isFree || noTokens;
+
+  msg.style.display  = blocked ? '' : 'none';
+  freeLock.style.display  = isFree  ? '' : 'none';
+  noTokBox.style.display  = noTokens ? '' : 'none';
+  form.style.opacity = blocked ? '0.2' : '';
+  form.style.pointerEvents = blocked ? 'none' : '';
 }
 
 function updateTokenDisplay(tokensLeft) {
@@ -1475,13 +1462,13 @@ function onTeamInput() {
 }
 
 async function runGlai() {
-  if (!currentUser || currentUser.role === 'free') return;
+  if (!currentUser || currentUser.role === 'free') {
+    refreshGlaiAccess();
+    return;
+  }
   const teamA = document.getElementById('teamA').value.trim();
   const teamB = document.getElementById('teamB').value.trim();
   const league = document.getElementById('leagueSel').value;
-  const xgA = parseFloat(document.getElementById('xgA').value) || 1.4;
-  const xgB = parseFloat(document.getElementById('xgB').value) || 1.1;
-
   if (!teamA || !teamB) {
     document.getElementById('tokenWarn').style.display = 'none';
     alert('Ingresa los nombres de ambos equipos');
@@ -1497,7 +1484,7 @@ async function runGlai() {
   try {
     const r = await apiFetch('/api/glai/analyze', {
       method: 'POST',
-      body: JSON.stringify({ teamA, teamB, league, xgA, xgB, sport: currentGlaiSport }),
+      body: JSON.stringify({ teamA, teamB, league, sport: currentGlaiSport }),
     });
     const d = await r.json();
 
@@ -1903,9 +1890,9 @@ async function runLiveAnalysis(match) {
   const awayScore = parseInt(match.awayScore) || 0;
   const period    = match.period || 1;
 
-  // Obtener xG/PPG/RPG de los inputs actuales
-  const xgA = parseFloat(document.getElementById('xgA').value) || (sport === 'nba' ? 115 : sport === 'mlb' ? 4.5 : 1.4);
-  const xgB = parseFloat(document.getElementById('xgB').value) || (sport === 'nba' ? 112 : sport === 'mlb' ? 4.2 : 1.1);
+  // xG/PPG/RPG calculados automáticamente por el backend
+  const xgA = sport === 'nba' ? 115 : sport === 'mlb' ? 4.5 : 1.4;
+  const xgB = sport === 'nba' ? 112 : sport === 'mlb' ? 4.2 : 1.1;
 
   // Calcular minuto/cuarto/inning
   let extra = {};
