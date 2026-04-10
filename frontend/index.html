@@ -7,19 +7,14 @@
 <style>
 :root{
   --bg:#0d1117;--card:#161b22;--card2:#1c2230;--border:#30363d;
-  --green:#00e676;--blue:#2196f3;--purple:#9c27b0;--orange:#ff9800;
-  --red:#f44336;--text:#e6edf3;--muted:#8b949e;--gold:#ffd700;
+  --green:#00e676;--blue:#2196f3;--purple:#9c27b0;--orange:#ff6d00;
+  --red:#e53935;--text:#e6edf3;--muted:#8b949e;--gold:#ffd700;
+  --cta-orange:#ff6d00;--cta-red:#e53935;--urgency:#ff1744;
 }
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif}
 body{background:var(--bg);color:var(--text);min-height:100vh}
 
 /* ── LOGIN ───────────────────────────────────────── */
-#loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse at center,#0d2137 0%,#0d1117 70%)}
-.loginBox{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:360px;text-align:center;box-shadow:0 20px 60px #000a}
-.loginBox h1{font-size:2rem;margin-bottom:4px}
-.loginBox p{color:var(--muted);margin-bottom:28px;font-size:.9rem}
-.loginBox input{width:100%;padding:12px 14px;background:#0d1117;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:1rem;margin-bottom:14px}
-.loginBox input:focus{outline:none;border-color:var(--blue)}
 .btn{width:100%;padding:12px;border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;transition:.2s}
 .btn-green{background:var(--green);color:#000}
 .btn-green:hover{opacity:.9}
@@ -198,21 +193,259 @@ nav button.active{font-weight:700}
 .liveTopScoreVal{font-weight:900}
 .liveTopScorePct{font-size:.65rem;color:var(--muted)}
 .liveMeta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+
+/* ── LANDING ─────────────────────────────────────── */
+#landingWrap{display:block;background:var(--bg);min-height:100vh}
+.landingHero{
+  background:radial-gradient(ellipse at 30% 40%,#0d2d45 0%,#0d1117 65%);
+  text-align:center;padding:60px 20px 48px;position:relative;overflow:hidden
+}
+.landingHero::before{
+  content:'';position:absolute;inset:0;
+  background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%232196f3' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.landingHero h1{font-size:2.8rem;font-weight:900;margin-bottom:10px;position:relative}
+.landingHero h1 span{
+  background:linear-gradient(135deg,#2196f3,#00e676);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent
+}
+.landingHero p{font-size:1.1rem;color:var(--muted);max-width:520px;margin:0 auto 28px;position:relative}
+.heroSports{display:flex;justify-content:center;gap:12px;margin-bottom:32px;position:relative}
+.heroSport{background:rgba(33,150,243,.12);border:1px solid rgba(33,150,243,.3);border-radius:12px;padding:10px 20px;font-size:.9rem;font-weight:700}
+.heroCta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;position:relative}
+.heroCta .btn{width:auto;padding:13px 28px;font-size:1rem;border-radius:10px}
+.waBtn{background:#25d366;color:#fff;display:inline-flex;align-items:center;gap:8px}
+.waBtn:hover{opacity:.9}
+
+.plansSection{padding:48px 20px;max-width:1000px;margin:0 auto}
+.plansSection h2{text-align:center;font-size:1.6rem;margin-bottom:8px}
+.plansSection>p{text-align:center;color:var(--muted);margin-bottom:32px}
+.plansGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media(max-width:720px){.plansGrid{grid-template-columns:1fr}}
+.planCard{
+  background:var(--card);border:1px solid var(--border);border-radius:16px;
+  padding:28px 24px;position:relative;transition:.2s
+}
+.planCard.featured{
+  border-color:var(--blue);
+  box-shadow:0 0 0 1px var(--blue),0 8px 32px rgba(33,150,243,.2)
+}
+.planBadge{
+  position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+  background:linear-gradient(135deg,#ff6d00,#e53935);color:#fff;padding:5px 18px;border-radius:20px;
+  font-size:.75rem;font-weight:700;white-space:nowrap;
+  box-shadow:0 2px 12px rgba(229,57,53,.5)
+}
+.planName{font-size:1.2rem;font-weight:900;margin-bottom:4px}
+.planPrice{font-size:2rem;font-weight:900;color:var(--orange);margin:12px 0 4px}
+.planPrice span{font-size:.9rem;font-weight:400;color:var(--muted)}
+.planSub{font-size:.8rem;color:var(--muted);margin-bottom:20px}
+.planFeatures{list-style:none;margin-bottom:24px}
+.planFeatures li{padding:6px 0;font-size:.88rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.planFeatures li:last-child{border:none}
+.planFeatures li .ico{font-size:.9rem}
+.planBtn{width:100%;padding:11px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:.95rem;transition:.2s}
+.planBtnFree{background:#333;color:#ccc}
+.planBtnFree:hover{background:#444;color:#fff}
+/* NARANJA — psicología: empuja a la acción (CTA Premium) */
+.planBtnPro{background:linear-gradient(135deg,#ff6d00,#ff8f00);color:#fff;box-shadow:0 4px 20px rgba(255,109,0,.4)}
+.planBtnPro:hover{box-shadow:0 6px 28px rgba(255,109,0,.6);transform:translateY(-1px)}
+/* ROJO-NARANJA — psicología: urgencia y exclusividad (VIP) */
+.planBtnVip{background:linear-gradient(135deg,#e53935,#c62828);color:#fff;box-shadow:0 4px 20px rgba(229,57,53,.4)}
+.planBtnVip:hover{box-shadow:0 6px 28px rgba(229,57,53,.6);transform:translateY(-1px)}
+/* Urgency badge */
+.urgencyTag{
+  display:inline-block;background:#ff1744;color:#fff;
+  padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:700;
+  margin-bottom:8px;animation:pulse 1.8s infinite
+}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,23,68,.5)}50%{box-shadow:0 0 0 8px rgba(255,23,68,0)}}
+
+.landingFooter{text-align:center;padding:32px 20px;color:var(--muted);font-size:.85rem;border-top:1px solid var(--border)}
+.landingFooter a{color:var(--blue);text-decoration:none}
+
+/* ── LOGIN MODAL ─────────────────────────────────── */
+#loginWrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center}
+.loginBox{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:36px 32px;width:360px;text-align:center;box-shadow:0 20px 60px #000a;position:relative}
+.loginBox .closeModal{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer}
+.loginBox h1{font-size:1.6rem;margin-bottom:4px}
+.loginBox p{color:var(--muted);margin-bottom:22px;font-size:.88rem}
+.loginBox input{width:100%;padding:11px 14px;background:#0d1117;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.95rem;margin-bottom:12px}
+.loginBox input:focus{outline:none;border-color:var(--blue)}
+.loginBox .btn{margin-bottom:8px}
+.loginToggle{font-size:.83rem;color:var(--muted);margin-top:10px}
+.loginToggle a{color:var(--blue);cursor:pointer;text-decoration:underline}
+.loginErr{color:var(--red);font-size:.83rem;margin-top:8px;min-height:18px}
+
+/* ── UPGRADE MODAL ───────────────────────────────── */
+#upgradeModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1100;align-items:center;justify-content:center}
+.upgradeBox{
+  background:var(--card);border:1px solid var(--blue);border-radius:18px;
+  padding:36px 30px;max-width:420px;width:calc(100% - 32px);text-align:center;
+  box-shadow:0 0 0 1px var(--blue),0 20px 60px rgba(33,150,243,.3);position:relative
+}
+.upgradeBox .closeModal{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer}
+.upgradeLock{font-size:3rem;margin-bottom:10px}
+.upgradeBox h2{font-size:1.4rem;margin-bottom:6px}
+.upgradeBox>p{color:var(--muted);margin-bottom:20px;font-size:.9rem}
+.upgradeFeats{background:#0d1117;border-radius:10px;padding:14px;margin-bottom:22px;text-align:left}
+.upgradeFeats li{padding:6px 0;font-size:.88rem;list-style:none;border-bottom:1px solid var(--border)}
+.upgradeFeats li:last-child{border:none}
+.upgradeActions{display:flex;flex-direction:column;gap:10px}
+.upgradeActions .btn{width:100%;padding:13px;font-size:1rem;border-radius:10px}
 </style>
 </head>
 <body>
 
 <!-- ══════════════════════════════════════════════════
-     LOGIN SCREEN
+     LANDING PAGE
 ══════════════════════════════════════════════════ -->
-<div id="loginWrap">
+<div id="landingWrap">
+
+  <!-- Hero -->
+  <section class="landingHero">
+    <div class="urgencyTag" style="margin-bottom:16px;font-size:.8rem;padding:5px 16px">⚡ Regístrate hoy y recibe 5 análisis GRATIS</div>
+    <h1>Prono<span>Gol IA</span></h1>
+    <p>Predicciones deportivas con Inteligencia Artificial que aprende sola. Soccer, NBA y MLB en un solo lugar.</p>
+    <div class="heroSports">
+      <div class="heroSport">⚽ Soccer</div>
+      <div class="heroSport">🏀 NBA</div>
+      <div class="heroSport">⚾ MLB</div>
+    </div>
+    <div class="heroCta">
+      <button onclick="openRegister()" style="background:linear-gradient(135deg,#ff6d00,#ff8f00);color:#fff;padding:15px 36px;font-size:1.1rem;font-weight:900;border:none;border-radius:12px;cursor:pointer;box-shadow:0 6px 28px rgba(255,109,0,.55);transition:.2s;letter-spacing:.3px" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 36px rgba(255,109,0,.7)'" onmouseout="this.style.transform='';this.style.boxShadow='0 6px 28px rgba(255,109,0,.55)'">🚀 Empezar Gratis</button>
+      <button onclick="openLogin()" style="background:rgba(255,255,255,.07);color:#ccc;padding:15px 28px;font-size:1rem;font-weight:700;border:1px solid rgba(255,255,255,.15);border-radius:12px;cursor:pointer;transition:.2s" onmouseover="this.style.background='rgba(255,255,255,.12)'" onmouseout="this.style.background='rgba(255,255,255,.07)'">🔑 Iniciar Sesión</button>
+      <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20acceso%20Premium%20a%20PronoGol%20IA" target="_blank" class="btn waBtn" style="padding:13px 28px;font-size:1rem;border-radius:10px;text-decoration:none">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        Contactar
+      </a>
+    </div>
+  </section>
+
+  <!-- Planes -->
+  <section class="plansSection">
+    <h2>Elige tu Plan</h2>
+    <p>Empieza gratis y mejora cuando quieras</p>
+    <div class="plansGrid">
+
+      <!-- FREE -->
+      <div class="planCard">
+        <div class="planName">🆓 Free</div>
+        <div class="planPrice">$0 <span>/ siempre</span></div>
+        <div class="planSub">Perfecto para empezar</div>
+        <ul class="planFeatures">
+          <li><span class="ico">✅</span> Ver partidos del día (Soccer, NBA, MLB)</li>
+          <li><span class="ico">✅</span> 5 análisis GLAI de bienvenida</li>
+          <li><span class="ico">✅</span> Estadísticas generales</li>
+          <li><span class="ico">❌</span> <span style="color:var(--muted)">Análisis ilimitados</span></li>
+          <li><span class="ico">❌</span> <span style="color:var(--muted)">IA en vivo</span></li>
+        </ul>
+        <button class="planBtn planBtnFree" onclick="openRegister()">Crear cuenta gratis</button>
+      </div>
+
+      <!-- PREMIUM -->
+      <div class="planCard featured" style="border-color:#ff6d00;box-shadow:0 0 0 1px #ff6d00,0 8px 40px rgba(255,109,0,.25)">
+        <div class="planBadge">🔥 MÁS POPULAR</div>
+        <div class="urgencyTag">⚡ Plazas limitadas</div>
+        <div class="planName">🏆 Premium</div>
+        <div class="planPrice">$$ <span>/ mes</span></div>
+        <div class="planSub">Para los que van en serio</div>
+        <ul class="planFeatures">
+          <li><span class="ico">✅</span> Todo lo de Free</li>
+          <li><span class="ico">✅</span> Análisis GLAI ilimitados</li>
+          <li><span class="ico">✅</span> IA en vivo (Soccer, NBA, MLB)</li>
+          <li><span class="ico">✅</span> Head-to-Head histórico</li>
+          <li><span class="ico">✅</span> Matrices de score y cuotas</li>
+        </ul>
+        <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20suscripci%C3%B3n%20Premium%20a%20PronoGol%20IA" target="_blank" class="planBtn planBtnPro" style="display:block;text-align:center;text-decoration:none;padding:13px 0;font-size:1rem">
+          🔥 ¡Quiero Premium ahora!
+        </a>
+      </div>
+
+      <!-- VIP -->
+      <div class="planCard" style="border-color:#c62828;box-shadow:0 0 0 1px #c6282850,0 8px 32px rgba(198,40,40,.15)">
+        <div class="planName">💎 VIP</div>
+        <div class="planPrice" style="color:#e53935">$$$ <span>/ mes</span></div>
+        <div class="planSub">Máximo nivel</div>
+        <ul class="planFeatures">
+          <li><span class="ico">✅</span> Todo lo de Premium</li>
+          <li><span class="ico">✅</span> Consultas personalizadas</li>
+          <li><span class="ico">✅</span> Acceso prioritario a nuevas funciones</li>
+          <li><span class="ico">✅</span> Soporte directo 1 a 1</li>
+          <li><span class="ico">✅</span> Alertas de partidos clave</li>
+        </ul>
+        <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20suscripci%C3%B3n%20VIP%20a%20PronoGol%20IA" target="_blank" class="planBtn planBtnVip" style="display:block;text-align:center;text-decoration:none;padding:13px 0;font-size:1rem">
+          💎 Quiero acceso VIP
+        </a>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="landingFooter">
+    PronoGol IA &nbsp;·&nbsp; Predicciones con inteligencia artificial &nbsp;·&nbsp;
+    <a href="https://wa.me/525636284497" target="_blank">📲 WhatsApp</a>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     LOGIN / REGISTRO MODAL
+══════════════════════════════════════════════════ -->
+<div id="loginWrap" style="display:none">
   <div class="loginBox">
-    <h1>⚽ Soccer Predictor</h1>
-    <p>Sistema IA con aprendizaje autónomo</p>
-    <input id="lUser" type="text" placeholder="Usuario" autocomplete="username"/>
-    <input id="lPass" type="password" placeholder="Contraseña" autocomplete="current-password"/>
-    <button class="btn btn-green" onclick="doLogin()">Ingresar</button>
-    <div class="loginErr" id="loginErr"></div>
+    <button class="closeModal" onclick="closeLogin()">✕</button>
+
+    <!-- LOGIN -->
+    <div id="loginView">
+      <h1>🔑 Iniciar Sesión</h1>
+      <p>Accede a tu cuenta PronoGol</p>
+      <input id="lUser" type="text" placeholder="Usuario" autocomplete="username"/>
+      <input id="lPass" type="password" placeholder="Contraseña" autocomplete="current-password"/>
+      <button class="btn btn-green" style="margin-bottom:8px" onclick="doLogin()">Ingresar</button>
+      <div class="loginErr" id="loginErr"></div>
+      <div class="loginToggle">¿No tienes cuenta? <a onclick="switchToRegister()">Regístrate gratis</a></div>
+    </div>
+
+    <!-- REGISTRO -->
+    <div id="registerView" style="display:none">
+      <h1>🚀 Crear Cuenta</h1>
+      <p>5 análisis gratis de bienvenida 🎁</p>
+      <input id="rUser" type="text" placeholder="Elige un usuario" autocomplete="username"/>
+      <input id="rPass" type="password" placeholder="Contraseña (mín. 6 caracteres)" autocomplete="new-password"/>
+      <input id="rPass2" type="password" placeholder="Confirmar contraseña" autocomplete="new-password"/>
+      <button class="btn btn-green" style="margin-bottom:8px" onclick="doRegister()">Crear cuenta gratis</button>
+      <div class="loginErr" id="registerErr"></div>
+      <div class="loginToggle">¿Ya tienes cuenta? <a onclick="switchToLogin()">Inicia sesión</a></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     UPGRADE MODAL (usuarios Free)
+══════════════════════════════════════════════════ -->
+<div id="upgradeModal" style="display:none">
+  <div class="upgradeBox">
+    <button class="closeModal" onclick="closeUpgrade()">✕</button>
+    <div class="upgradeLock">🔒</div>
+    <h2>Función Premium</h2>
+    <p>Desbloquea el análisis GLAI completo con IA autónoma que aprende sola cada hora</p>
+    <ul class="upgradeFeats">
+      <li>🧠 Análisis GLAI ilimitados (Soccer, NBA, MLB)</li>
+      <li>📡 IA en vivo — predicción mientras el partido ocurre</li>
+      <li>🤝 Head-to-Head histórico entre equipos</li>
+      <li>📊 Matrices de score, cuotas y proyecciones</li>
+      <li>🔄 Aprendizaje autónomo cada hora</li>
+    </ul>
+    <div class="upgradeActions">
+      <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20acceso%20Premium%20a%20PronoGol%20IA" target="_blank"
+         style="text-decoration:none;display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;background:linear-gradient(135deg,#ff6d00,#e53935);color:#fff;border-radius:10px;font-weight:900;font-size:1rem;box-shadow:0 4px 20px rgba(255,109,0,.5);animation:pulse 1.8s infinite">
+        🔥 ¡Quiero Premium ahora!
+      </a>
+      <button class="btn" style="background:#333;color:#ccc;width:100%;padding:11px;border-radius:10px;font-size:.9rem" onclick="closeUpgrade()">
+        Seguir con plan Free
+      </button>
+    </div>
   </div>
 </div>
 
@@ -263,8 +496,21 @@ nav button.active{font-weight:700}
   <div id="pageGlai" class="page">
     <div class="card">
       <h2>🧠 Análisis GLAI — IA Autónoma</h2>
-      <div id="glaiAccessMsg" class="alert alert-orange" style="display:none">
-        🔒 Esta función es <strong>solo Premium</strong>. Contacta al administrador para obtener acceso.
+      <div id="glaiAccessMsg" style="display:none">
+        <div style="background:linear-gradient(135deg,#0d2137,#1a1a2e);border:1px solid var(--blue);border-radius:14px;padding:24px;text-align:center;margin-bottom:16px">
+          <div style="font-size:2.5rem;margin-bottom:8px">🔒</div>
+          <h3 style="margin-bottom:6px">Agotaste tus análisis gratuitos</h3>
+          <p style="color:var(--muted);font-size:.9rem;margin-bottom:16px">Consigue acceso Premium para análisis ilimitados con IA en Soccer, NBA y MLB</p>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+            <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20acceso%20Premium%20a%20PronoGol%20IA" target="_blank"
+               style="background:linear-gradient(135deg,#ff6d00,#e53935);color:#fff;padding:11px 24px;border-radius:10px;text-decoration:none;font-weight:900;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 16px rgba(255,109,0,.45);animation:pulse 1.8s infinite">
+              🔥 ¡Quiero Premium ahora!
+            </a>
+            <button onclick="closeUpgrade()" style="background:#333;color:#ccc;padding:11px 20px;border-radius:10px;border:none;cursor:pointer;font-weight:700">
+              Ver planes
+            </button>
+          </div>
+        </div>
       </div>
       <div id="glaiForm">
         <!-- Sport selector -->
@@ -523,11 +769,37 @@ async function checkSession() {
       currentUser = d.user;
       showApp();
     } else {
-      showLogin();
+      showLanding();
     }
   } catch {
-    showLogin();
+    showLanding();
   }
+}
+
+// ── Landing / Modal helpers ──────────────────────────
+function openLogin() {
+  document.getElementById('loginView').style.display = '';
+  document.getElementById('registerView').style.display = 'none';
+  document.getElementById('loginErr').textContent = '';
+  document.getElementById('loginWrap').style.display = 'flex';
+}
+function openRegister() {
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('registerView').style.display = '';
+  document.getElementById('registerErr').textContent = '';
+  document.getElementById('loginWrap').style.display = 'flex';
+}
+function closeLogin() {
+  document.getElementById('loginWrap').style.display = 'none';
+}
+function switchToRegister() { openRegister(); }
+function switchToLogin()    { openLogin();    }
+
+function openUpgrade() {
+  document.getElementById('upgradeModal').style.display = 'flex';
+}
+function closeUpgrade() {
+  document.getElementById('upgradeModal').style.display = 'none';
 }
 
 async function doLogin() {
@@ -543,6 +815,7 @@ async function doLogin() {
     const d = await r.json();
     if (d.ok) {
       currentUser = d.user;
+      closeLogin();
       showApp();
     } else {
       setLoginErr(d.error || 'Error de inicio de sesión');
@@ -552,23 +825,52 @@ async function doLogin() {
   }
 }
 
+async function doRegister() {
+  const username = document.getElementById('rUser').value.trim();
+  const password = document.getElementById('rPass').value.trim();
+  const pass2    = document.getElementById('rPass2').value.trim();
+  const err = document.getElementById('registerErr');
+  if (!username || !password) { err.textContent = 'Completa todos los campos'; return; }
+  if (password !== pass2) { err.textContent = 'Las contraseñas no coinciden'; return; }
+  if (password.length < 6) { err.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
+  err.textContent = '';
+  try {
+    const r = await apiFetch('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      currentUser = d.user;
+      closeLogin();
+      showApp();
+    } else {
+      err.textContent = d.error || 'Error al crear la cuenta';
+    }
+  } catch {
+    err.textContent = 'Error de conexión con el servidor';
+  }
+}
+
 async function doLogout() {
   await apiFetch('/api/auth/logout', { method: 'POST' });
   currentUser = null;
   clearInterval(statsInterval);
   clearInterval(scanPollInterval);
   clearInterval(matchRefreshInterval);
-  showLogin();
+  showLanding();
 }
 
 function setLoginErr(msg) { document.getElementById('loginErr').textContent = msg; }
 
-function showLogin() {
-  document.getElementById('loginWrap').style.display = 'flex';
+function showLanding() {
+  document.getElementById('landingWrap').style.display = 'block';
+  document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'none';
 }
 
 function showApp() {
+  document.getElementById('landingWrap').style.display = 'none';
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'block';
 
@@ -577,9 +879,9 @@ function showApp() {
   badge.textContent = currentUser.username + ' · ' + currentUser.role.toUpperCase();
   badge.className = 'badge badge-' + currentUser.role;
 
-  // Tokens (premium)
+  // Tokens (free con tokens también los mostramos)
   const tokD = document.getElementById('tokDisplay');
-  if (currentUser.role === 'premium') {
+  if (currentUser.tokens !== undefined && currentUser.tokens !== null && currentUser.tokens !== -1) {
     tokD.style.display = '';
     tokD.textContent = '🪙 ' + (currentUser.tokens || 0) + ' tokens';
   } else {
@@ -590,10 +892,10 @@ function showApp() {
   document.getElementById('navAdmin').style.display =
     currentUser.role === 'admin' ? '' : 'none';
 
-  // GLAI access message
-  const msg = document.getElementById('glaiAccessMsg');
+  // GLAI access — free users see upgrade prompt
+  const msg  = document.getElementById('glaiAccessMsg');
   const form = document.getElementById('glaiForm');
-  if (currentUser.role === 'free') {
+  if (currentUser.role === 'free' && (currentUser.tokens || 0) <= 0) {
     msg.style.display = '';
     form.style.opacity = '0.4';
     form.style.pointerEvents = 'none';
@@ -630,7 +932,7 @@ async function loadMatches(silent = false) {
   if (!silent) el.innerHTML = '<div class="alert alert-blue">⏳ Cargando partidos...</div>';
   try {
     const r = await apiFetch('/api/matches');
-    if (r.status === 401) { showLogin(); return; }
+    if (r.status === 401) { showLanding(); return; }
     const d = await r.json();
     allMatches = d.matches || [];
     renderMatches(allMatches);
@@ -1982,7 +2284,13 @@ document.addEventListener('click', e => {
 // INICIO
 // ════════════════════════════════════════════════════
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && document.getElementById('loginWrap').style.display !== 'none') doLogin();
+  if (e.key !== 'Enter') return;
+  const wrap = document.getElementById('loginWrap');
+  if (wrap.style.display === 'none') return;
+  const loginView    = document.getElementById('loginView');
+  const registerView = document.getElementById('registerView');
+  if (loginView.style.display !== 'none')    doLogin();
+  else if (registerView.style.display !== 'none') doRegister();
 });
 checkSession();
 </script>
