@@ -456,6 +456,56 @@ def sportradar_scan():
     return jsonify({'ok': True, 'msg': f'Scan Sportradar iniciado ({days} días)'})
 
 # ════════════════════════════════════════════════════════════════
+# RUTA — STATS POR EQUIPO (PPG / RPG / xG)
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/team/stats')
+def team_stats():
+    """
+    Devuelve el promedio de goles/puntos/carreras de un equipo.
+    GET /api/team/stats?team=Lakers&sport=nba
+    Respuesta: { ok, team, sport, avg, games, source }
+    """
+    team  = request.args.get('team', '').strip()
+    sport = request.args.get('sport', 'soccer').lower()
+    if not team:
+        return jsonify({'ok': False, 'msg': 'Falta parámetro team'})
+
+    _SPORT_MAP = {'nba': 'basketball', 'mlb': 'baseball',
+                  'soccer': 'soccer', 'basketball': 'basketball', 'baseball': 'baseball'}
+    sport_db = _SPORT_MAP.get(sport, sport)
+
+    try:
+        results = db.get_team_results(team, limit=20)
+        key     = team.lower()[:7]
+        scores  = []
+        for r in results:
+            r_sport = r.get('sport', 'soccer')
+            if r_sport != sport_db and r_sport != sport:
+                continue
+            hn = r.get('home_team', '')
+            an = r.get('away_team', '')
+            if key in hn.lower():
+                scores.append(r['home_goals'])
+            elif key in an.lower():
+                scores.append(r['away_goals'])
+
+        if not scores:
+            # Sin datos propios → devuelve el default del deporte
+            defaults = {'nba': 115.0, 'basketball': 115.0,
+                        'mlb': 4.5,   'baseball': 4.5,
+                        'soccer': 1.4}
+            return jsonify({'ok': True, 'team': team, 'sport': sport,
+                            'avg': defaults.get(sport, 1.4), 'games': 0,
+                            'source': 'default'})
+
+        avg = round(sum(scores) / len(scores), 2)
+        return jsonify({'ok': True, 'team': team, 'sport': sport,
+                        'avg': avg, 'games': len(scores), 'source': 'db'})
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': str(e)}), 500
+
+
+# ════════════════════════════════════════════════════════════════
 # RUTAS — SPORTRADAR NBA
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/nba/sportradar/status')
