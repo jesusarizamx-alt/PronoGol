@@ -490,18 +490,27 @@ nav button.active{font-weight:700}
 
     <!-- REGISTRO -->
     <div id="registerView" style="display:none">
-      <h1>🚀 Crear Cuenta</h1>
-      <p>5 análisis gratis de bienvenida 🎁</p>
-      <input id="rUser" type="text" placeholder="Elige un usuario" autocomplete="username"/>
-      <input id="rPass" type="password" placeholder="Contraseña (mín. 6 caracteres)" autocomplete="new-password"/>
-      <input id="rPass2" type="password" placeholder="Confirmar contraseña" autocomplete="new-password"/>
-      <label style="display:flex;align-items:flex-start;gap:8px;text-align:left;font-size:.78rem;color:var(--muted);margin-bottom:12px;cursor:pointer">
-        <input id="rTerms" type="checkbox" style="width:auto;margin:2px 0 0;flex-shrink:0"/>
-        <span>Soy mayor de 18 años y acepto los
-          <a onclick="document.getElementById('disclaimerModal').style.display='flex'" style="color:var(--blue);cursor:pointer;text-decoration:underline">términos de uso</a>.
-          Entiendo que PronoGol IA es solo para fines informativos y no garantiza resultados.</span>
-      </label>
-      <button class="btn btn-green" style="margin-bottom:8px" onclick="doRegister()">Crear cuenta gratis</button>
+      <h1>🎟️ Activar Cuenta</h1>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">Ingresa tu código de invitación para activar tu cuenta</p>
+      <!-- Paso 1: código -->
+      <div id="regStep1">
+        <input id="rCode" type="text" placeholder="Código de invitación (ej: PRONO-XXXX-XXXX)"
+               autocomplete="off" style="text-transform:uppercase;letter-spacing:2px"
+               oninput="this.value=this.value.toUpperCase()" onblur="validateInviteCode()"/>
+        <div id="codeStatus" style="font-size:.82rem;min-height:18px;margin:-6px 0 10px"></div>
+        <button class="btn btn-blue" onclick="validateInviteCode(true)">Verificar código</button>
+      </div>
+      <!-- Paso 2: contraseña (aparece tras validar código) -->
+      <div id="regStep2" style="display:none">
+        <div style="background:#0d2137;border:1px solid var(--blue);border-radius:10px;padding:12px;margin-bottom:14px;text-align:left">
+          <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">CUENTA ASIGNADA</div>
+          <div style="font-weight:700;font-size:1.1rem" id="rUserDisplay"></div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:2px" id="rRoleDisplay"></div>
+        </div>
+        <input id="rPass" type="password" placeholder="Elige una contraseña (mín. 6 caracteres)" autocomplete="new-password"/>
+        <input id="rPass2" type="password" placeholder="Confirmar contraseña" autocomplete="new-password"/>
+        <button class="btn btn-green" style="margin-bottom:8px" onclick="doRegister()">✅ Activar cuenta</button>
+      </div>
       <div class="loginErr" id="registerErr"></div>
       <div class="loginToggle">¿Ya tienes cuenta? <a onclick="switchToLogin()">Inicia sesión</a></div>
     </div>
@@ -841,6 +850,82 @@ nav button.active{font-weight:700}
       </div>
     </div>
 
+    <!-- 🎟️ Códigos de Invitación -->
+    <div class="card" style="border-color:rgba(156,39,176,.4)">
+      <h2 style="color:#ce93d8">🎟️ Códigos de Invitación</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">
+        Genera un código único por usuario. Sin código no se puede registrar nadie.
+      </p>
+      <!-- Formulario generar código -->
+      <div style="background:#0d1117;border-radius:10px;padding:14px;margin-bottom:16px">
+        <div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:10px">➕ Generar nuevo código</div>
+        <div class="flex" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">Username</div>
+            <input id="codeUser" placeholder="username del nuevo usuario" class="inputInline" style="width:180px"/>
+          </div>
+          <div>
+            <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">Rol</div>
+            <select id="codeRole" class="roleSelect">
+              <option value="premium">premium</option>
+              <option value="free">free</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">Tokens</div>
+            <input id="codeToks" type="number" value="10" min="0" class="inputInline" style="width:80px"/>
+          </div>
+          <div>
+            <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">Expira (días)</div>
+            <input id="codeDays" type="number" placeholder="∞" min="1" class="inputInline" style="width:80px"/>
+          </div>
+          <button class="btn btn-sm" style="background:linear-gradient(135deg,#9c27b0,#673ab7);color:#fff" onclick="generateCode()">🎟️ Generar código</button>
+        </div>
+      </div>
+      <!-- Código generado -->
+      <div id="generatedCode" style="display:none;background:linear-gradient(135deg,#0d2137,#1a0d37);border:1px solid #9c27b0;border-radius:10px;padding:16px;margin-bottom:16px;text-align:center">
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:6px">CÓDIGO GENERADO — mándaselo al usuario</div>
+        <div id="generatedCodeVal" style="font-size:1.5rem;font-weight:900;letter-spacing:4px;color:#ce93d8;margin-bottom:10px"></div>
+        <button class="btn btn-sm" style="background:#333;color:#ccc" onclick="copyCode()">📋 Copiar código</button>
+      </div>
+      <div id="codeMsg" style="font-size:.82rem;min-height:16px;margin-bottom:8px"></div>
+      <!-- Lista de códigos -->
+      <div style="overflow-x:auto">
+        <table class="userTable">
+          <thead><tr><th>Código</th><th>Usuario</th><th>Rol</th><th>Tokens</th><th>Creado</th><th>Expira</th><th>Estado</th><th>IP Uso</th><th></th></tr></thead>
+          <tbody id="codesTableBody"><tr><td colspan="9" style="color:var(--muted);text-align:center;padding:16px">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 📋 Logs de actividad -->
+    <div class="card">
+      <h2>📋 Logs de Actividad</h2>
+      <div class="flex" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <input id="logUserFilter" placeholder="Filtrar por usuario..." class="inputInline" style="width:180px" oninput="filterLogs()"/>
+        <select id="logEventFilter" class="roleSelect" onchange="filterLogs()">
+          <option value="">Todos los eventos</option>
+          <option value="login">Login</option>
+          <option value="login_failed">Login fallido</option>
+          <option value="register">Registro</option>
+          <option value="register_failed">Registro fallido</option>
+          <option value="analyze">Análisis</option>
+          <option value="analyze_failed">Análisis fallido</option>
+          <option value="code_generated">Código generado</option>
+          <option value="code_used">Código usado</option>
+          <option value="logout">Logout</option>
+        </select>
+        <button class="btn btn-sm" style="background:#333;color:#ccc" onclick="loadLogs()">🔄 Actualizar</button>
+      </div>
+      <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
+        <table class="userTable">
+          <thead><tr><th>Fecha</th><th>Usuario</th><th>Evento</th><th>IP</th><th>Detalles</th></tr></thead>
+          <tbody id="logsTableBody"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:16px">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- 🔥 Partidos Clave — Alertas VIP -->
     <div class="card" style="border-color:rgba(255,109,0,.4)">
       <h2 style="color:var(--orange)">🔥 Partidos Clave — Alertas Premium</h2>
@@ -1089,21 +1174,53 @@ async function doLogin() {
   }
 }
 
+let _inviteUsername = '';
+let _inviteRole = '';
+
+async function validateInviteCode(showMsg = false) {
+  const code = document.getElementById('rCode').value.trim().toUpperCase();
+  const statusEl = document.getElementById('codeStatus');
+  const step2 = document.getElementById('regStep2');
+  if (!code) { statusEl.textContent = ''; step2.style.display = 'none'; return; }
+  try {
+    const r = await apiFetch('/api/auth/validate-code', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+    const d = await r.json();
+    if (d.valid) {
+      _inviteUsername = d.username;
+      _inviteRole = d.role;
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = '✅ Código válido';
+      document.getElementById('rUserDisplay').textContent = '👤 ' + d.username;
+      document.getElementById('rRoleDisplay').textContent = '🏅 ' + (d.role === 'premium' ? 'Premium' : d.role);
+      step2.style.display = '';
+    } else {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '❌ ' + (d.error || 'Código inválido');
+      step2.style.display = 'none';
+      _inviteUsername = '';
+    }
+  } catch {
+    if (showMsg) { statusEl.style.color='var(--red)'; statusEl.textContent = 'Error de conexión'; }
+  }
+}
+
 async function doRegister() {
-  const username = document.getElementById('rUser').value.trim();
+  const code     = document.getElementById('rCode').value.trim().toUpperCase();
   const password = document.getElementById('rPass').value.trim();
   const pass2    = document.getElementById('rPass2').value.trim();
-  const terms    = document.getElementById('rTerms').checked;
-  const err = document.getElementById('registerErr');
-  if (!username || !password) { err.textContent = 'Completa todos los campos'; return; }
+  const err      = document.getElementById('registerErr');
+  if (!code || !_inviteUsername) { err.textContent = 'Verifica tu código de invitación primero'; return; }
+  if (!password) { err.textContent = 'Ingresa una contraseña'; return; }
   if (password !== pass2) { err.textContent = 'Las contraseñas no coinciden'; return; }
   if (password.length < 6) { err.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
-  if (!terms) { err.textContent = 'Debes aceptar los términos de uso para continuar'; return; }
   err.textContent = '';
   try {
     const r = await apiFetch('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ code, password }),
     });
     const d = await r.json();
     if (d.ok) {
@@ -1111,7 +1228,7 @@ async function doRegister() {
       closeLogin();
       showApp();
     } else {
-      err.textContent = d.error || 'Error al crear la cuenta';
+      err.textContent = d.error || 'Error al activar la cuenta';
     }
   } catch {
     err.textContent = 'Error de conexión con el servidor';
@@ -1167,7 +1284,7 @@ function showApp() {
 
   loadMatches();
   loadStats();
-  if (currentUser.role === 'admin') { loadUsers(); loadKeys(); }
+  if (currentUser.role === 'admin') { loadUsers(); loadKeys(); loadCodes(); loadLogs(); }
   startStatsPoll();
   startMatchRefresh();
 }
@@ -1184,6 +1301,8 @@ function showPage(id) {
   if (id === 'admin' && currentUser?.role === 'admin') {
     loadUsers();
     loadKeys();
+    loadCodes();
+    loadLogs();
   }
 }
 
@@ -2593,6 +2712,130 @@ async function changeRole(username, role) {
     body: JSON.stringify({ role }),
   });
   loadUsers();
+}
+
+// ════════════════════════════════════════════════════
+// CÓDIGOS DE INVITACIÓN
+// ════════════════════════════════════════════════════
+let _allLogs = [];
+
+async function generateCode() {
+  const username = document.getElementById('codeUser').value.trim();
+  const role     = document.getElementById('codeRole').value;
+  const tokens   = parseInt(document.getElementById('codeToks').value) || 10;
+  const days     = document.getElementById('codeDays').value.trim() || null;
+  const msgEl    = document.getElementById('codeMsg');
+  if (!username) { msgEl.style.color='var(--red)'; msgEl.textContent='Ingresa un username'; return; }
+  msgEl.textContent = '';
+  const r = await apiFetch('/api/admin/codes', {
+    method: 'POST',
+    body: JSON.stringify({ username, role, tokens, expires_days: days ? parseInt(days) : null }),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    document.getElementById('generatedCodeVal').textContent = d.code;
+    document.getElementById('generatedCode').style.display = '';
+    document.getElementById('codeUser').value = '';
+    msgEl.style.color = 'var(--green)';
+    msgEl.textContent = `✅ Código generado para "${d.username}"`;
+    loadCodes();
+    loadLogs();
+  } else {
+    msgEl.style.color = 'var(--red)';
+    msgEl.textContent = d.error || 'Error al generar código';
+  }
+}
+
+function copyCode() {
+  const code = document.getElementById('generatedCodeVal').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = event.target;
+    btn.textContent = '✅ Copiado!';
+    setTimeout(() => btn.textContent = '📋 Copiar código', 2000);
+  });
+}
+
+async function loadCodes() {
+  const r = await apiFetch('/api/admin/codes');
+  const d = await r.json();
+  const tbody = document.getElementById('codesTableBody');
+  if (!d.codes || !d.codes.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:16px">Sin códigos generados</td></tr>';
+    return;
+  }
+  tbody.innerHTML = d.codes.map(c => {
+    const used = !!c.used_at;
+    const expired = c.expires_at && c.expires_at < new Date().toISOString();
+    const statusColor = used ? 'var(--muted)' : expired ? 'var(--red)' : 'var(--green)';
+    const statusText  = used ? '✅ Usado' : expired ? '⏰ Expirado' : '⏳ Pendiente';
+    const fecha = c.created_at ? c.created_at.slice(0,16).replace('T',' ') : '-';
+    const expira = c.expires_at ? c.expires_at.slice(0,10) : '∞';
+    const usedDate = c.used_at ? c.used_at.slice(0,16).replace('T',' ') : '-';
+    return `<tr style="${used||expired ? 'opacity:.5' : ''}">
+      <td style="font-family:monospace;letter-spacing:1px;font-weight:700">${c.code}</td>
+      <td>${c.username}</td>
+      <td><span class="badge badge-${c.role}">${c.role}</span></td>
+      <td>${c.tokens}</td>
+      <td style="font-size:.75rem">${fecha}</td>
+      <td style="font-size:.75rem">${expira}</td>
+      <td style="color:${statusColor};font-weight:700">${statusText}${used ? '<br><span style="font-size:.7rem;color:var(--muted)">'+usedDate+'</span>' : ''}</td>
+      <td style="font-size:.75rem">${c.used_ip || '-'}</td>
+      <td>${!used && !expired ? `<button class="btn btn-sm btn-red" onclick="revokeCode('${c.code}')">Revocar</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function revokeCode(code) {
+  if (!confirm(`¿Revocar el código ${code}?`)) return;
+  const r = await apiFetch(`/api/admin/codes/${code}`, { method: 'DELETE' });
+  const d = await r.json();
+  if (d.ok) { loadCodes(); loadLogs(); }
+  else alert(d.error || 'Error al revocar');
+}
+
+// ════════════════════════════════════════════════════
+// LOGS DE ACTIVIDAD
+// ════════════════════════════════════════════════════
+async function loadLogs() {
+  const r = await apiFetch('/api/admin/logs?limit=300');
+  const d = await r.json();
+  _allLogs = d.logs || [];
+  renderLogs(_allLogs);
+}
+
+function filterLogs() {
+  const user  = document.getElementById('logUserFilter').value.toLowerCase();
+  const event = document.getElementById('logEventFilter').value;
+  const filtered = _allLogs.filter(l =>
+    (!user  || l.username.toLowerCase().includes(user)) &&
+    (!event || l.event === event)
+  );
+  renderLogs(filtered);
+}
+
+function renderLogs(logs) {
+  const tbody = document.getElementById('logsTableBody');
+  if (!logs.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:16px">Sin logs</td></tr>';
+    return;
+  }
+  const eventColors = {
+    login:'var(--green)', login_failed:'var(--red)', register:'#9c27b0',
+    register_failed:'var(--red)', analyze:'var(--blue)', analyze_failed:'var(--orange)',
+    code_generated:'#ce93d8', code_used:'var(--green)', logout:'var(--muted)',
+    code_revoked:'var(--orange)'
+  };
+  tbody.innerHTML = logs.map(l => {
+    const color = eventColors[l.event] || 'var(--text)';
+    const fecha = l.created_at ? l.created_at.slice(0,16).replace('T',' ') : '-';
+    return `<tr>
+      <td style="font-size:.75rem;white-space:nowrap">${fecha}</td>
+      <td style="font-weight:700">${l.username}</td>
+      <td style="color:${color};font-weight:700;white-space:nowrap">${l.event}</td>
+      <td style="font-size:.75rem">${l.ip || '-'}</td>
+      <td style="font-size:.75rem;color:var(--muted)">${l.details || ''}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function grantTokens(username) {
