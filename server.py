@@ -283,6 +283,42 @@ def glai_analyze():
         'total':      glai.total_learned(),
     })
 
+@app.route('/api/glai/live', methods=['POST'])
+@require_login
+def glai_live():
+    """Análisis en vivo — gratis para todos los usuarios logueados."""
+    data       = request.get_json() or {}
+    team_a     = data.get('teamA', '')
+    team_b     = data.get('teamB', '')
+    sport      = data.get('sport', 'soccer')
+    home_score = int(data.get('homeScore', 0))
+    away_score = int(data.get('awayScore', 0))
+    val_a      = float(data.get('xgA', 1.4))
+    val_b      = float(data.get('xgB', 1.1))
+
+    if sport == 'soccer':
+        minute = int(data.get('minute', 45))
+        pred   = glai.predict_live_soccer(home_score, away_score, minute, val_a, val_b)
+    elif sport == 'nba':
+        period = int(data.get('period', 2))
+        pred   = glai.predict_live_nba(home_score, away_score, period, val_a, val_b)
+    elif sport == 'mlb':
+        inning = int(data.get('inning', 5))
+        half   = data.get('half', 'bottom')
+        pred   = glai.predict_live_mlb(home_score, away_score, inning, half, val_a, val_b)
+    else:
+        return jsonify({'error': 'Sport no soportado'}), 400
+
+    return jsonify({
+        'ok':        True,
+        'sport':     sport,
+        'teamA':     team_a,
+        'teamB':     team_b,
+        'homeScore': home_score,
+        'awayScore': away_score,
+        'prediction': pred,
+    })
+
 @app.route('/api/glai/team-history')
 @require_login
 def team_history():

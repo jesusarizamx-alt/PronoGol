@@ -410,6 +410,180 @@ class GLAIEngine:
         if learned is not None:
             self._scan_progress['learned'] = learned
 
+    # ─── Predicción EN VIVO ───────────────────────────────────────
+    def predict_live_soccer(self, home_score, away_score, minute, home_xg=1.4, away_xg=1.1):
+        """
+        Predicción en vivo fútbol.
+        Calcula probabilidad de resultado final dado el marcador actual y el minuto.
+        """
+        stoppage   = 5 if minute >= 85 else (4 if minute >= 75 else 3)
+        total_time = 90 + stoppage
+        remaining  = max(0, total_time - minute)
+        time_factor = remaining / 90.0
+
+        adj_xg_h = home_xg * time_factor
+        adj_xg_a = away_xg * time_factor
+
+        # Equipo que va perdiendo ataca más
+        diff = home_score - away_score
+        if diff < 0:
+            adj_xg_h *= min(1.35, 1 + abs(diff) * 0.13)
+            adj_xg_a *= max(0.80, 1 - abs(diff) * 0.07)
+        elif diff > 0:
+            adj_xg_a *= min(1.35, 1 + abs(diff) * 0.13)
+            adj_xg_h *= max(0.80, 1 - abs(diff) * 0.07)
+
+        max_add = 7
+        p_hw = p_d = p_aw = 0.0
+        top_scores = []
+
+        for ah in range(max_add + 1):
+            for aa in range(max_add + 1):
+                p = self._poisson(adj_xg_h, ah) * self._poisson(adj_xg_a, aa)
+                fh, fa = home_score + ah, away_score + aa
+                if fh > fa:   p_hw += p
+                elif fh < fa: p_aw += p
+                else:         p_d  += p
+                if p > 0.004:
+                    top_scores.append({'h': fh, 'a': fa, 'p': round(p, 4)})
+
+        # Ventaja del marcador actual pesa más conforme avanza el partido
+        elapsed = minute / total_time
+        if diff != 0 and elapsed > 0.3:
+            w = min(0.65, elapsed * 0.7)
+            if diff > 0:
+                p_hw = p_hw * (1 - w) + (0.82 + min(0.13, diff * 0.05)) * w
+                p_d  = p_d  * (1 - w) + 0.12 * w
+                p_aw = 1 - p_hw - p_d
+            else:
+                p_aw = p_aw * (1 - w) + (0.82 + min(0.13, abs(diff) * 0.05)) * w
+                p_d  = p_d  * (1 - w) + 0.12 * w
+                p_hw = 1 - p_aw - p_d
+
+        p_hw = max(0.01, min(0.97, p_hw))
+        p_aw = max(0.01, min(0.97, p_aw))
+        p_d  = max(0.01, 1 - p_hw - p_aw)
+
+        top_scores.sort(key=lambda x: x['p'], reverse=True)
+        best = top_scores[0] if top_scores else {'h': home_score, 'a': away_score}
+
+        return {
+            'pctA':       round(p_hw * 100),
+            'pctD':       round(p_d  * 100),
+            'pctB':       round(p_aw * 100),
+            'projFinalH': best['h'],
+            'projFinalA': best['a'],
+            'remaining':  round(remaining),
+            'minute':     minute,
+            'adjXgH':     round(adj_xg_h, 2),
+            'adjXgA':     round(adj_xg_a, 2),
+            'topScores':  top_scores[:6],
+        }
+
+    def predict_live_nba(self, home_score, away_score, period, home_ppg=115.0, away_ppg=112.0):
+        """
+        Predicción en vivo NBA.
+        period: 1-4 (cuarto actual), 5+ overtime.
+        """
+        HOME_ADV = 3.0
+        SIGMA    = 12.0
+        q_factors = [0.245, 0.250, 0.245, 0.260]
+
+        adj_ppg_h = home_ppg + HOME_ADV
+        period_idx = min(period - 1, 3)
+
+        # Puntos restantes: desde el cuarto actual hasta el 4
+        rem_h = sum(adj_ppg_h * q_factors[i] for i in range(period_idx, 4))
+        rem_a = sum(away_ppg  * q_factors[i] for i in range(period_idx, 4))
+
+        proj_h = home_score + rem_h
+        proj_a = away_score + rem_a
+        quarters_left = max(0, 4 - period)
+
+        sigma_adj = SIGMA * math.sqrt(max(0.25, quarters_left / 4))
+        diff_proj  = proj_h - proj_a
+        z = diff_proj / (sigma_adj * math.sqrt(2) + 1e-9)
+        p_home = 0.5 + 0.5 * math.erf(z)
+
+        # Peso del marcador real aumenta con el tiempo
+        actual_diff = home_score - away_score
+        elapsed = period_idx / 4
+        if actual_diff != 0 and elapsed > 0.25:
+            w = min(0.70, elapsed * 0.75)
+            if actual_diff > 0:
+                p_home = p_home * (1 - w) + (0.75 + min(0.20, actual_diff / 50)) * w
+            else:
+                p_home = p_home * (1 - w) + (0.25 - min(0.20, abs(actual_diff) / 50)) * w
+
+        p_home = max(0.02, min(0.98, p_home))
+        p_away = 1 - p_home
+
+        return {
+            'pctA':       round(p_home * 100),
+            'pctB':       round(p_away * 100),
+            'projFinalH': round(proj_h),
+            'projFinalA': round(proj_a),
+            'period':     period,
+            'quartersLeft': quarters_left,
+            'remH':       round(rem_h),
+            'remA':       round(rem_a),
+        }
+
+    def predict_live_mlb(self, home_score, away_score, inning, half='bottom',
+                          home_rpg=4.5, away_rpg=4.2):
+        """
+        Predicción en vivo MLB.
+        inning: 1-9+, half: 'top'(visita batea) | 'bottom'(local batea).
+        """
+        # Entradas restantes para cada equipo
+        if half == 'top':
+            away_inn_left = max(0, 9 - inning + 1)
+            home_inn_left = max(0, 9 - inning + 1)
+        else:
+            away_inn_left = max(0, 9 - inning)
+            home_inn_left = max(0, 9 - inning + 1)
+
+        home_rpi = home_rpg / 9.0
+        away_rpi = away_rpg / 9.0
+        exp_h = home_rpi * home_inn_left
+        exp_a = away_rpi * away_inn_left
+
+        max_r = 12
+        p_hw = p_aw = p_tie = 0.0
+        top_scores = []
+
+        for ah in range(max_r + 1):
+            for aa in range(max_r + 1):
+                p = self._poisson(exp_h, ah) * self._poisson(exp_a, aa)
+                fh, fa = home_score + ah, away_score + aa
+                if fh > fa:   p_hw  += p
+                elif fh < fa: p_aw  += p
+                else:         p_tie += p
+                if p > 0.004:
+                    top_scores.append({'h': fh, 'a': fa, 'p': round(p, 4)})
+
+        p_hw += p_tie * 0.52
+        p_aw += p_tie * 0.48
+        tot   = p_hw + p_aw
+        p_hw /= tot
+        p_aw /= tot
+
+        top_scores.sort(key=lambda x: x['p'], reverse=True)
+        best = top_scores[0] if top_scores else {'h': home_score, 'a': away_score}
+
+        return {
+            'pctA':       round(p_hw * 100),
+            'pctB':       round(p_aw * 100),
+            'projFinalH': best['h'],
+            'projFinalA': best['a'],
+            'inning':     inning,
+            'half':       half,
+            'inningsLeft': max(away_inn_left, home_inn_left),
+            'expH':       round(exp_h, 1),
+            'expA':       round(exp_a, 1),
+            'topScores':  top_scores[:5],
+        }
+
     # ─── NBA — Predicción ─────────────────────────────────────────
     def predict_nba(self, home_ppg, away_ppg):
         """
