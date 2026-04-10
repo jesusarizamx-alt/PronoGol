@@ -267,7 +267,7 @@ def matches():
 
         # ── Sportradar: partidos en vivo (si hay key configurada) ─
         if sprt._ok():
-            sr_live = sprt.get_live_matches()
+            sr_live = sprt.get_all_live()
             if sr_live:
                 existing = {(m['homeTeam'], m['awayTeam']) for m in data}
                 for m in sr_live:
