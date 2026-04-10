@@ -195,10 +195,10 @@ class SportradarNBAScraper:
                 'x-api-key': self.api_key,
             }, timeout=10)
             print(f"[NBA] status() HTTP {r.status_code}")
-            if r.status_code in (401, 403):
-                return {'ok': False, 'msg': f'NBA API key inválida (HTTP {r.status_code})', 'key_set': True}
-            if r.status_code == 404:
-                return {'ok': False, 'msg': 'NBA API no activada en tu plan Sportradar. Regístrala en developer.sportradar.com', 'key_set': True, 'not_subscribed': True}
+            if r.status_code == 401:
+                return {'ok': False, 'msg': 'NBA API key inválida (401)', 'key_set': True}
+            if r.status_code in (403, 404):
+                return {'ok': False, 'msg': 'NBA API no activada en tu plan Sportradar. Regístrala en developer.sportradar.com → Applications → NBA Trial v8', 'key_set': True, 'not_subscribed': True}
             if not r.ok:
                 return {'ok': False, 'msg': f'NBA error HTTP {r.status_code}', 'key_set': True}
             data = r.json()

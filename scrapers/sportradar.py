@@ -1,11 +1,15 @@
 """
 scrapers/sportradar.py — Integración con Sportradar Soccer API v4
-Rutas confirmadas disponibles en trial:
-  ✅ competitions.json
-  ✅ schedules/live/schedule.json
-  ✅ competitions/{id}/seasons.json
-  ✅ seasons/{id}/summaries.json
-  ❌ schedules/{fecha}/schedule.json  (no disponible en trial)
+
+Endpoints confirmados disponibles en trial (2026-04-10):
+  ✅ competitions.json                          → status / lista de ligas
+  ✅ competitions/{id}/seasons.json             → temporadas por liga
+  ✅ schedules/{fecha}/summaries.json           → resultados del día (SCAN)
+  ❌ schedules/live/schedule.json               → 404 en trial
+  ❌ schedules/{fecha}/schedule.json            → 404 en trial
+  ❌ schedules/{fecha}/results.json             → 404 en trial
+
+NBA/MLB requieren suscripción separada en developer.sportradar.com (403 actualmente).
 """
 import os
 import requests
@@ -15,33 +19,22 @@ from datetime import datetime, timedelta
 ACCESS_LEVEL = os.environ.get('SPORTRADAR_ACCESS', 'trial')
 BASE_URL     = f"https://api.sportradar.com/soccer/{ACCESS_LEVEL}/v4/en"
 
-# Competencias principales a escanear para GLAI
-TOP_COMPETITIONS = [
-    'sr:competition:17',   # Premier League
-    'sr:competition:18',   # La Liga
-    'sr:competition:23',   # Bundesliga
-    'sr:competition:31',   # Serie A
-    'sr:competition:34',   # Ligue 1
-    'sr:competition:7',    # UEFA Champions League
-    'sr:competition:679',  # MLS
-    'sr:competition:242',  # Liga MX
-    'sr:competition:325',  # Argentina Primera
-    'sr:competition:390',  # Brasileirao
-]
-
 LEAGUE_MAP = {
-    'sr:competition:17':  'eng.1',
-    'sr:competition:18':  'esp.1',
-    'sr:competition:23':  'ger.1',
-    'sr:competition:31':  'ita.1',
-    'sr:competition:34':  'fra.1',
+    'sr:competition:17':  'eng.1',    # Premier League
+    'sr:competition:18':  'esp.1',    # La Liga
+    'sr:competition:23':  'ger.1',    # Bundesliga
+    'sr:competition:31':  'ita.1',    # Serie A
+    'sr:competition:34':  'fra.1',    # Ligue 1
     'sr:competition:7':   'uefa.champions',
-    'sr:competition:679': 'usa.1',
-    'sr:competition:242': 'mex.1',
-    'sr:competition:325': 'arg.1',
-    'sr:competition:390': 'bra.1',
-    'sr:competition:304': 'por.1',
-    'sr:competition:37':  'ned.1',
+    'sr:competition:679': 'usa.1',    # MLS
+    'sr:competition:242': 'mex.1',    # Liga MX
+    'sr:competition:325': 'arg.1',    # Argentina Primera
+    'sr:competition:390': 'bra.1',    # Brasileirao
+    'sr:competition:304': 'por.1',    # Primeira Liga
+    'sr:competition:37':  'ned.1',    # Eredivisie
+    'sr:competition:238': 'tur.1',    # Süper Lig
+    'sr:competition:8':   'uefa.europa',
+    'sr:competition:24':  'sco.1',    # Scottish Prem
 }
 
 
@@ -90,7 +83,7 @@ class SportradarScraper:
                     print(f"[Sportradar] ❌ Auth error {r.status_code}")
                     return None
                 if r.status_code == 404:
-                    print(f"[Sportradar] ⚠️ 404: {endpoint}")
+                    print(f"[Sportradar] ⚠️ 404 (no disponible en trial): {endpoint}")
                     return None
                 if not r.ok:
                     print(f"[Sportradar] ⚠️ HTTP {r.status_code}: {endpoint}")
@@ -102,141 +95,138 @@ class SportradarScraper:
                     time.sleep(2)
         return None
 
-    # ── Partidos en vivo ──────────────────────────────────────────
-    def get_live_matches(self):
-        """Partidos Soccer en vivo — endpoint confirmado en trial."""
-        data = self._get("schedules/live/schedule.json")
+    # ── Parser de summaries ───────────────────────────────────────
+    def _parse_summary(self, summary):
+        """
+        Convierte un item de summaries.json en formato interno.
+        Funciona para resultados finales y partidos en curso.
+        """
+        sport_event = summary.get('sport_event', {})
+        status      = summary.get('sport_event_status', {})
+        competitors = sport_event.get('competitors', [])
+        if len(competitors) < 2:
+            return None
+
+        home    = next((c for c in competitors if c.get('qualifier') == 'home'), competitors[0])
+        away    = next((c for c in competitors if c.get('qualifier') == 'away'), competitors[1])
+        comp_id = sport_event.get('tournament', {}).get('id', '')
+        sr_stat = status.get('status', 'scheduled')
+
+        status_map = {
+            'closed':      'post', 'ended': 'post', 'complete': 'post',
+            'live':        'in',   'inprogress': 'in', '1st_half': 'in',
+            '2nd_half':    'in',   'halftime': 'in', 'overtime': 'in',
+            'scheduled':   'pre',  'not_started': 'pre', 'created': 'pre',
+            'postponed':   'pre',  'cancelled': 'canceled',
+        }
+        internal_status = status_map.get(sr_stat, 'pre')
+
+        hg = status.get('home_score', '')
+        ag = status.get('away_score', '')
+        minute = status.get('clock', {}).get('played', '') if isinstance(status.get('clock'), dict) else ''
+
+        return {
+            'id':        sport_event.get('id', ''),
+            'name':      f"{home.get('name','')} vs {away.get('name','')}",
+            'date':      sport_event.get('start_time', ''),
+            'status':    internal_status,
+            'league':    LEAGUE_MAP.get(comp_id, comp_id),
+            'sport':     'soccer',
+            'homeTeam':  home.get('name', ''),
+            'awayTeam':  away.get('name', ''),
+            'homeScore': str(hg) if internal_status != 'pre' else '',
+            'awayScore': str(ag) if internal_status != 'pre' else '',
+            'homeAbbr':  home.get('abbreviation', ''),
+            'awayAbbr':  away.get('abbreviation', ''),
+            'homeLogo':  '', 'awayLogo': '',
+            'period':    status.get('period', 0),
+            'clock':     str(minute) + "'" if minute else '',
+            'detail':    sr_stat,
+            'source':    'sportradar',
+            # Para el scan:
+            '_homeGoals': int(hg) if str(hg).isdigit() else None,
+            '_awayGoals': int(ag) if str(ag).isdigit() else None,
+            '_final':     internal_status == 'post',
+        }
+
+    # ── Summaries por fecha ───────────────────────────────────────
+    def get_summaries_by_date(self, date_str):
+        """
+        Obtiene todos los partidos de una fecha.
+        date_str: 'YYYY-MM-DD'
+        Endpoint confirmado 200 en trial: schedules/{fecha}/summaries.json
+        """
+        data = self._get(f"schedules/{date_str}/summaries.json")
         if not data:
             return []
-        results = []
-        for sched in data.get('sport_events', []):
-            sport_event = sched.get('sport_event', sched)
-            status      = sched.get('sport_event_status', {})
-            competitors = sport_event.get('competitors', [])
-            if len(competitors) < 2:
-                continue
-            home    = next((c for c in competitors if c.get('qualifier') == 'home'), competitors[0])
-            away    = next((c for c in competitors if c.get('qualifier') == 'away'), competitors[1])
-            comp_id = sport_event.get('tournament', {}).get('id', '')
-            sr_stat = status.get('status', 'live')
-            results.append({
-                'id':        sport_event.get('id', ''),
-                'name':      f"{home.get('name','')} vs {away.get('name','')}",
-                'date':      sport_event.get('start_time', ''),
-                'status':    'in',
-                'league':    LEAGUE_MAP.get(comp_id, comp_id),
-                'sport':     'soccer',
-                'homeTeam':  home.get('name', ''),
-                'awayTeam':  away.get('name', ''),
-                'homeScore': status.get('home_score', ''),
-                'awayScore': status.get('away_score', ''),
-                'homeAbbr':  home.get('abbreviation', ''),
-                'awayAbbr':  away.get('abbreviation', ''),
-                'homeLogo':  '', 'awayLogo': '',
-                'period':    status.get('period', 0),
-                'clock':     str(status.get('clock', '')),
-                'detail':    sr_stat,
-                'source':    'sportradar',
-            })
-        return results
+        parsed = []
+        for s in data.get('summaries', []):
+            m = self._parse_summary(s)
+            if m:
+                parsed.append(m)
+        return parsed
 
+    # ── Partidos de hoy y en vivo ─────────────────────────────────
     def get_today_schedule(self):
-        """Hoy: usa partidos en vivo + los programados del live feed."""
-        return self.get_live_matches()
+        """Todos los partidos de hoy."""
+        today = datetime.utcnow().strftime('%Y-%m-%d')
+        return self.get_summaries_by_date(today)
 
-    # ── Competencias y temporadas ─────────────────────────────────
+    def get_live_matches(self):
+        """Partidos Soccer en vivo ahora mismo (filtrado de summaries de hoy)."""
+        return [m for m in self.get_today_schedule() if m['status'] == 'in']
+
+    # ── Competencias ──────────────────────────────────────────────
     def get_competitions(self):
-        """Lista de competencias disponibles — confirmado 200 en trial."""
+        """Lista de competencias — confirmado 200 en trial."""
         data = self._get("competitions.json")
         return data.get('competitions', []) if data else []
-
-    def get_current_season(self, competition_id):
-        """Obtiene la temporada activa de una competencia."""
-        data = self._get(f"competitions/{competition_id}/seasons.json")
-        if not data:
-            return None
-        seasons = data.get('seasons', [])
-        if not seasons:
-            return None
-        # La primera suele ser la más reciente
-        return seasons[0].get('id')
-
-    def get_season_summaries(self, season_id):
-        """
-        Resultados de una temporada — incluye marcadores finales.
-        Endpoint: seasons/{season_id}/summaries.json
-        """
-        data = self._get(f"seasons/{season_id}/summaries.json")
-        if not data:
-            return []
-        results = []
-        for summary in data.get('summaries', []):
-            sport_event = summary.get('sport_event', {})
-            status      = summary.get('sport_event_status', {})
-            if status.get('status') not in ('closed', 'complete'):
-                continue
-            competitors = sport_event.get('competitors', [])
-            if len(competitors) < 2:
-                continue
-            home = next((c for c in competitors if c.get('qualifier') == 'home'), competitors[0])
-            away = next((c for c in competitors if c.get('qualifier') == 'away'), competitors[1])
-            hg = status.get('home_score')
-            ag = status.get('away_score')
-            if hg is None or ag is None:
-                continue
-            comp_id = sport_event.get('tournament', {}).get('id', '')
-            results.append({
-                'event_id':  sport_event.get('id', ''),
-                'league':    LEAGUE_MAP.get(comp_id, comp_id),
-                'homeTeam':  home.get('name', ''),
-                'awayTeam':  away.get('name', ''),
-                'homeGoals': int(hg),
-                'awayGoals': int(ag),
-            })
-        return results
 
     # ── Scan histórico para GLAI ──────────────────────────────────
     def scan(self, days_back=7, glai=None, on_progress=None):
         """
-        Escanea las principales ligas via competitions → seasons → summaries
-        y alimenta a GLAI con los resultados encontrados.
+        Escanea los últimos N días usando schedules/{fecha}/summaries.json
+        y alimenta a GLAI con los resultados finales encontrados.
+        Endpoint confirmado 200 en trial.
         """
         if not self._ok():
             print("[Sportradar] scan() omitido — sin API key")
             return 0
 
         total = 0
-        comps = TOP_COMPETITIONS
-        print(f"[Sportradar] Escaneando {len(comps)} competencias...")
+        today = datetime.utcnow()
+        dates = [(today - timedelta(days=i)).strftime('%Y-%m-%d')
+                 for i in range(0, days_back + 1)]
 
-        for i, comp_id in enumerate(comps):
+        print(f"[Sportradar] Escaneando {len(dates)} días via summaries.json...")
+
+        for i, date_str in enumerate(dates):
             try:
-                season_id = self.get_current_season(comp_id)
-                time.sleep(1.1)
-                if not season_id:
-                    continue
+                matches = self.get_summaries_by_date(date_str)
+                finals  = [m for m in matches if m['_final']
+                           and m['_homeGoals'] is not None
+                           and m['homeTeam'] and m['awayTeam']]
 
-                results = self.get_season_summaries(season_id)
-                time.sleep(1.1)
-
-                league = LEAGUE_MAP.get(comp_id, comp_id)
-                for r in results:
-                    if glai and r['homeTeam'] and r['awayTeam']:
-                        glai.learn('soccer', league,
-                                   r['homeTeam'], r['awayTeam'],
-                                   r['homeGoals'], r['awayGoals'],
-                                   source='sportradar', event_id=f"sr_{r['event_id']}")
+                for m in finals:
+                    if glai:
+                        glai.learn('soccer', m['league'],
+                                   m['homeTeam'], m['awayTeam'],
+                                   m['_homeGoals'], m['_awayGoals'],
+                                   source='sportradar', event_id=f"sr_{m['id']}")
                         total += 1
 
-                if on_progress:
-                    pct = round((i + 1) / len(comps) * 30)
-                    on_progress(pct, f"Sportradar {league} — {total} resultados", total)
+                if finals:
+                    print(f"[Sportradar] {date_str}: {len(finals)} resultados")
 
-                print(f"[Sportradar] {league}: {len(results)} resultados")
+                if on_progress:
+                    pct = round((i + 1) / len(dates) * 30)
+                    on_progress(pct, f"Sportradar {date_str} — {total} resultados", total)
 
             except Exception as e:
-                print(f"[Sportradar] Error en {comp_id}: {e}")
+                print(f"[Sportradar] Error en {date_str}: {e}")
                 continue
+
+            time.sleep(1.2)  # respetar rate limit trial
 
         print(f"[Sportradar] ✅ Scan completo — {total} resultados aprendidos")
         return total
@@ -245,22 +235,19 @@ class SportradarScraper:
     def status(self):
         if not self._ok():
             return {'ok': False, 'msg': 'Sin API key configurada', 'key_set': False}
-        # Usa competitions.json — confirmado 200 en trial
         try:
             url = f"{BASE_URL}/competitions.json"
             r   = self.session.get(url, headers={
-                'Accept': 'application/json',
-                'x-api-key': self.api_key,
+                'Accept': 'application/json', 'x-api-key': self.api_key,
             }, timeout=10)
-            print(f"[Sportradar] status() HTTP {r.status_code}")
             if r.status_code in (401, 403):
-                return {'ok': False, 'msg': f'API key inválida (HTTP {r.status_code})', 'key_set': True}
+                return {'ok': False, 'msg': f'API key inválida ({r.status_code})', 'key_set': True}
             if not r.ok:
                 return {'ok': False, 'msg': f'Error HTTP {r.status_code}', 'key_set': True}
             comps = len(r.json().get('competitions', []))
             return {
                 'ok':           True,
-                'msg':          f'Sportradar Soccer conectado — {comps} competencias disponibles',
+                'msg':          f'Sportradar Soccer conectado — {comps} competencias',
                 'key_set':      True,
                 'access_level': ACCESS_LEVEL,
                 'competitions': comps,
