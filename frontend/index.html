@@ -332,15 +332,15 @@ nav button.active{font-weight:700}
       <div class="planCard">
         <div class="planName">🆓 Free</div>
         <div class="planPrice">$0 <span>/ siempre</span></div>
-        <div class="planSub">Perfecto para empezar</div>
+        <div class="planSub">Perfecto para probar</div>
         <ul class="planFeatures">
           <li><span class="ico">✅</span> Ver partidos del día (Soccer, NBA, MLB)</li>
-          <li><span class="ico">✅</span> 5 análisis GLAI de bienvenida</li>
+          <li><span class="ico">🎁</span> <strong>5 predicciones gratis</strong> al registrarte</li>
           <li><span class="ico">✅</span> Estadísticas generales</li>
-          <li><span class="ico">❌</span> <span style="color:var(--muted)">Análisis ilimitados</span></li>
+          <li><span class="ico">❌</span> <span style="color:var(--muted)">Más predicciones</span></li>
           <li><span class="ico">❌</span> <span style="color:var(--muted)">IA en vivo</span></li>
         </ul>
-        <button class="planBtn planBtnFree" onclick="openRegister()">Crear cuenta gratis</button>
+        <button class="planBtn planBtnFree" onclick="openRegister()">Probar gratis</button>
       </div>
 
       <!-- PREMIUM -->
@@ -352,7 +352,7 @@ nav button.active{font-weight:700}
         <div class="planSub">Para los que van en serio</div>
         <ul class="planFeatures">
           <li><span class="ico">✅</span> Todo lo de Free</li>
-          <li><span class="ico">✅</span> Análisis GLAI ilimitados</li>
+          <li><span class="ico">🪙</span> <strong>20 predicciones</strong> por ciclo</li>
           <li><span class="ico">✅</span> IA en vivo (Soccer, NBA, MLB)</li>
           <li><span class="ico">✅</span> Head-to-Head histórico</li>
           <li><span class="ico">✅</span> Matrices de score y cuotas</li>
@@ -369,10 +369,10 @@ nav button.active{font-weight:700}
         <div class="planSub">Máximo nivel</div>
         <ul class="planFeatures">
           <li><span class="ico">✅</span> Todo lo de Premium</li>
-          <li><span class="ico">✅</span> Consultas personalizadas</li>
-          <li><span class="ico">✅</span> Acceso prioritario a nuevas funciones</li>
+          <li><span class="ico">🪙</span> <strong>Predicciones extra</strong> por ciclo</li>
+          <li><span class="ico">📲</span> Alertas de partidos clave por WhatsApp</li>
           <li><span class="ico">✅</span> Soporte directo 1 a 1</li>
-          <li><span class="ico">✅</span> Alertas de partidos clave</li>
+          <li><span class="ico">✅</span> Acceso prioritario a novedades</li>
         </ul>
         <a href="https://wa.me/525636284497?text=Hola%2C%20quiero%20suscripci%C3%B3n%20VIP%20a%20PronoGol%20IA" target="_blank" class="planBtn planBtnVip" style="display:block;text-align:center;text-decoration:none;padding:13px 0;font-size:1rem">
           💎 Quiero acceso VIP
@@ -382,10 +382,62 @@ nav button.active{font-weight:700}
     </div>
   </section>
 
-  <div class="landingFooter">
-    PronoGol IA &nbsp;·&nbsp; Predicciones con inteligencia artificial &nbsp;·&nbsp;
-    <a href="https://wa.me/525636284497" target="_blank">📲 WhatsApp</a>
+  <!-- DISCLAIMER -->
+  <div style="background:#0a0d12;border-top:1px solid #1e2530;padding:28px 24px;max-width:900px;margin:0 auto">
+    <p style="font-size:.78rem;color:#555;line-height:1.7;text-align:center">
+      <strong style="color:#666">⚠️ AVISO LEGAL Y LIMITACIÓN DE RESPONSABILIDAD</strong><br><br>
+      PronoGol IA es una plataforma de entretenimiento y análisis estadístico con fines informativos únicamente.
+      Las predicciones generadas por el sistema de inteligencia artificial son estimaciones probabilísticas basadas en datos históricos
+      y <strong style="color:#666">no constituyen asesoramiento financiero, de apuestas, ni garantía de resultado alguno.</strong><br><br>
+      El uso de esta plataforma no implica ninguna recomendación para realizar apuestas de dinero real.
+      Las apuestas deportivas pueden ser ilegales en tu jurisdicción — es responsabilidad exclusiva del usuario conocer
+      y cumplir las leyes aplicables en su país o región.<br><br>
+      PronoGol IA, sus operadores y desarrolladores <strong style="color:#666">no se hacen responsables de pérdidas económicas,
+      daños directos o indirectos</strong> derivados del uso de la información proporcionada por este sistema.
+      Al acceder y utilizar la plataforma, el usuario acepta expresamente estos términos.<br><br>
+      <a href="#" onclick="document.getElementById('disclaimerModal').style.display='flex';return false" style="color:#444;text-decoration:underline;font-size:.76rem">Ver términos completos</a>
+      &nbsp;·&nbsp; <a href="https://wa.me/525636284497" target="_blank" style="color:#444;text-decoration:underline;font-size:.76rem">📲 Contacto WhatsApp</a>
+    </p>
   </div>
+
+  <div class="landingFooter">
+    PronoGol IA &nbsp;·&nbsp; © 2025 Todos los derechos reservados &nbsp;·&nbsp;
+    Solo con fines informativos y de entretenimiento
+  </div>
+</div>
+
+<!-- DISCLAIMER MODAL -->
+<div id="disclaimerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:16px;padding:32px;max-width:600px;width:calc(100% - 32px);max-height:85vh;overflow-y:auto;position:relative">
+    <button onclick="document.getElementById('disclaimerModal').style.display='none'" style="position:absolute;top:12px;right:14px;background:none;border:none;color:#8b949e;font-size:1.3rem;cursor:pointer">✕</button>
+    <h2 style="margin-bottom:16px;font-size:1.2rem">📄 Términos de Uso y Aviso Legal</h2>
+    <div style="font-size:.83rem;color:#8b949e;line-height:1.8">
+      <p><strong style="color:#ccc">1. Naturaleza del Servicio</strong><br>
+      PronoGol IA es una herramienta de análisis estadístico y entretenimiento. Las predicciones son generadas por modelos de inteligencia artificial y representan probabilidades estadísticas, no certezas ni garantías.</p>
+      <br>
+      <p><strong style="color:#ccc">2. No es Asesoramiento Financiero</strong><br>
+      Ningún contenido de esta plataforma debe interpretarse como consejo financiero, de inversión o de apuestas. La plataforma no recomienda ni promueve las apuestas de dinero real.</p>
+      <br>
+      <p><strong style="color:#ccc">3. Responsabilidad del Usuario</strong><br>
+      El usuario es el único responsable de las decisiones que tome basándose en la información proporcionada. PronoGol IA no asume ninguna responsabilidad por pérdidas económicas, directas o indirectas, derivadas del uso de sus predicciones.</p>
+      <br>
+      <p><strong style="color:#ccc">4. Legalidad de las Apuestas</strong><br>
+      Las apuestas deportivas están reguladas de manera diferente en cada país. Es responsabilidad exclusiva del usuario verificar que el uso de esta información cumpla con las leyes vigentes en su jurisdicción.</p>
+      <br>
+      <p><strong style="color:#ccc">5. Exactitud de la Información</strong><br>
+      Los datos históricos y estadísticas utilizados pueden contener errores o estar desactualizados. PronoGol IA no garantiza la exactitud, completitud ni actualidad de la información presentada.</p>
+      <br>
+      <p><strong style="color:#ccc">6. Menores de Edad</strong><br>
+      El acceso a esta plataforma está prohibido para personas menores de 18 años. Al registrarse, el usuario declara ser mayor de edad.</p>
+      <br>
+      <p><strong style="color:#ccc">7. Modificaciones</strong><br>
+      PronoGol IA se reserva el derecho de modificar estos términos en cualquier momento. El uso continuado de la plataforma implica la aceptación de los términos vigentes.</p>
+      <br>
+      <p style="color:#555;font-size:.76rem">Al usar PronoGol IA aceptas todos los términos anteriores. Para consultas: <a href="https://wa.me/525636284497" target="_blank" style="color:#2196f3">WhatsApp</a></p>
+    </div>
+    <button onclick="document.getElementById('disclaimerModal').style.display='none'" style="margin-top:20px;width:100%;padding:12px;background:#333;color:#ccc;border:none;border-radius:8px;cursor:pointer;font-weight:700">Entendido</button>
+  </div>
+</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════
@@ -413,6 +465,12 @@ nav button.active{font-weight:700}
       <input id="rUser" type="text" placeholder="Elige un usuario" autocomplete="username"/>
       <input id="rPass" type="password" placeholder="Contraseña (mín. 6 caracteres)" autocomplete="new-password"/>
       <input id="rPass2" type="password" placeholder="Confirmar contraseña" autocomplete="new-password"/>
+      <label style="display:flex;align-items:flex-start;gap:8px;text-align:left;font-size:.78rem;color:var(--muted);margin-bottom:12px;cursor:pointer">
+        <input id="rTerms" type="checkbox" style="width:auto;margin:2px 0 0;flex-shrink:0"/>
+        <span>Soy mayor de 18 años y acepto los
+          <a onclick="document.getElementById('disclaimerModal').style.display='flex'" style="color:var(--blue);cursor:pointer;text-decoration:underline">términos de uso</a>.
+          Entiendo que PronoGol IA es solo para fines informativos y no garantiza resultados.</span>
+      </label>
       <button class="btn btn-green" style="margin-bottom:8px" onclick="doRegister()">Crear cuenta gratis</button>
       <div class="loginErr" id="registerErr"></div>
       <div class="loginToggle">¿Ya tienes cuenta? <a onclick="switchToLogin()">Inicia sesión</a></div>
@@ -668,6 +726,22 @@ nav button.active{font-weight:700}
 
   <!-- ── PÁGINA: ADMIN ─────────────────────────────── -->
   <div id="pageAdmin" class="page">
+
+    <!-- 🔥 Partidos Clave — Alertas VIP -->
+    <div class="card" style="border-color:rgba(255,109,0,.4)">
+      <h2 style="color:var(--orange)">🔥 Partidos Clave — Alertas VIP</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:12px">
+        La IA analiza los partidos de hoy y detecta los que tienen mayor probabilidad de resultado claro.
+        Mándalos directamente por WhatsApp a tus usuarios VIP.
+      </p>
+      <div class="flex" style="gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <label style="color:var(--muted);align-self:center;font-size:.85rem">Mínimo % probabilidad:</label>
+        <input id="keyThreshold" type="number" value="72" min="50" max="99" style="width:72px;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px"/>
+        <button class="btn btn-sm" style="background:linear-gradient(135deg,#ff6d00,#e53935);color:#fff" onclick="loadKeyMatches()">🔍 Detectar partidos clave</button>
+      </div>
+      <div id="keyMatchesList"><p style="color:var(--muted);font-size:.85rem">Pulsa "Detectar" para analizar los partidos de hoy.</p></div>
+    </div>
+
     <!-- Scan manual -->
     <div class="card">
       <h2>🔄 Scan Manual GLAI</h2>
@@ -829,10 +903,12 @@ async function doRegister() {
   const username = document.getElementById('rUser').value.trim();
   const password = document.getElementById('rPass').value.trim();
   const pass2    = document.getElementById('rPass2').value.trim();
+  const terms    = document.getElementById('rTerms').checked;
   const err = document.getElementById('registerErr');
   if (!username || !password) { err.textContent = 'Completa todos los campos'; return; }
   if (password !== pass2) { err.textContent = 'Las contraseñas no coinciden'; return; }
   if (password.length < 6) { err.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
+  if (!terms) { err.textContent = 'Debes aceptar los términos de uso para continuar'; return; }
   err.textContent = '';
   try {
     const r = await apiFetch('/api/auth/register', {
@@ -879,31 +955,25 @@ function showApp() {
   badge.textContent = currentUser.username + ' · ' + currentUser.role.toUpperCase();
   badge.className = 'badge badge-' + currentUser.role;
 
-  // Tokens (free con tokens también los mostramos)
+  // Tokens — mostrar para todos excepto admin (admin = ilimitado)
   const tokD = document.getElementById('tokDisplay');
-  if (currentUser.tokens !== undefined && currentUser.tokens !== null && currentUser.tokens !== -1) {
+  if (currentUser.role === 'admin') {
     tokD.style.display = '';
-    tokD.textContent = '🪙 ' + (currentUser.tokens || 0) + ' tokens';
+    tokD.textContent = '🪙 ∞ ilimitado';
   } else {
-    tokD.style.display = 'none';
+    const toks = currentUser.tokens ?? 0;
+    tokD.style.display = '';
+    const color = toks === 0 ? 'var(--red)' : toks <= 3 ? 'var(--orange)' : 'var(--gold)';
+    tokD.style.color = color;
+    tokD.textContent = '🪙 ' + toks + ' análisis';
   }
 
   // Admin tab
   document.getElementById('navAdmin').style.display =
     currentUser.role === 'admin' ? '' : 'none';
 
-  // GLAI access — free users see upgrade prompt
-  const msg  = document.getElementById('glaiAccessMsg');
-  const form = document.getElementById('glaiForm');
-  if (currentUser.role === 'free' && (currentUser.tokens || 0) <= 0) {
-    msg.style.display = '';
-    form.style.opacity = '0.4';
-    form.style.pointerEvents = 'none';
-  } else {
-    msg.style.display = 'none';
-    form.style.opacity = '';
-    form.style.pointerEvents = '';
-  }
+  // GLAI access — bloqueado cuando tokens = 0 (cualquier rol salvo admin)
+  refreshGlaiAccess();
 
   loadMatches();
   loadStats();
@@ -1185,6 +1255,25 @@ function setGlaiSport(sport, btn) {
 // ════════════════════════════════════════════════════
 // GLAI ANÁLISIS
 // ════════════════════════════════════════════════════
+function refreshGlaiAccess() {
+  const msg  = document.getElementById('glaiAccessMsg');
+  const form = document.getElementById('glaiForm');
+  const noTokens = currentUser.role !== 'admin' && (currentUser.tokens ?? 0) <= 0;
+  msg.style.display  = noTokens ? '' : 'none';
+  form.style.opacity = noTokens ? '0.35' : '';
+  form.style.pointerEvents = noTokens ? 'none' : '';
+}
+
+function updateTokenDisplay(tokensLeft) {
+  if (currentUser.role === 'admin') return;
+  currentUser.tokens = tokensLeft;
+  const tokD  = document.getElementById('tokDisplay');
+  const color = tokensLeft === 0 ? 'var(--red)' : tokensLeft <= 3 ? 'var(--orange)' : 'var(--gold)';
+  tokD.style.color = color;
+  tokD.textContent = '🪙 ' + tokensLeft + ' análisis';
+  refreshGlaiAccess();
+}
+
 function onTeamInput() {
   document.getElementById('glaiResults').style.display = 'none';
 }
@@ -1218,19 +1307,14 @@ async function runGlai() {
 
     if (r.status === 403) {
       if (d.error === 'no_tokens') {
-        document.getElementById('tokenWarn').style.display = '';
-      } else {
-        document.getElementById('glaiAccessMsg').style.display = '';
+        updateTokenDisplay(0);
       }
       return;
     }
     if (!r.ok) { alert(d.error || 'Error al analizar'); return; }
 
-    // Actualizar tokens en header
-    if (d.tokensLeft >= 0) {
-      currentUser.tokens = d.tokensLeft;
-      document.getElementById('tokDisplay').textContent = '🪙 ' + d.tokensLeft + ' tokens';
-    }
+    // Actualizar tokens tras análisis
+    if (d.tokensLeft >= 0) updateTokenDisplay(d.tokensLeft);
 
     const sport = d.sport || currentGlaiSport;
     if (sport === 'nba') renderGlaiNBA(d, teamA, teamB);
@@ -2099,6 +2183,44 @@ function startStatsPoll() {
 // ════════════════════════════════════════════════════
 // ADMIN — SCAN
 // ════════════════════════════════════════════════════
+async function loadKeyMatches() {
+  const threshold = (parseFloat(document.getElementById('keyThreshold').value) || 72) / 100;
+  const el = document.getElementById('keyMatchesList');
+  el.innerHTML = '<div class="alert alert-blue">⏳ Analizando partidos...</div>';
+  try {
+    const r = await apiFetch('/api/glai/key-matches', {
+      method: 'POST',
+      body: JSON.stringify({ threshold }),
+    });
+    const d = await r.json();
+    if (!d.ok || !d.matches.length) {
+      el.innerHTML = '<p style="color:var(--muted);font-size:.85rem">No hay partidos con esa probabilidad hoy. Baja el umbral o revisa mañana.</p>';
+      return;
+    }
+    const sportIcon = { soccer:'⚽', nba:'🏀', mlb:'⚾' };
+    el.innerHTML = d.matches.map(m => `
+      <div style="background:#0d1117;border-radius:10px;padding:14px;margin-bottom:10px;border-left:3px solid var(--orange)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:1.1rem">${sportIcon[m.sport]||'🏅'}</span>
+          <strong>${m.home} vs ${m.away}</strong>
+          <span style="margin-left:auto;background:linear-gradient(135deg,#ff6d00,#e53935);color:#fff;padding:3px 10px;border-radius:20px;font-size:.78rem;font-weight:700">${m.prob}%</span>
+        </div>
+        <p style="color:var(--muted);font-size:.82rem;margin-bottom:10px">
+          📊 Pronóstico: <strong style="color:var(--text)">${m.winner}</strong>
+          &nbsp;·&nbsp; ${m.league || m.sport.toUpperCase()}
+        </p>
+        <a href="https://wa.me/525636284497?text=${encodeURIComponent(m.waText)}" target="_blank"
+           style="display:inline-flex;align-items:center;gap:6px;background:#25d366;color:#fff;padding:7px 16px;border-radius:8px;text-decoration:none;font-size:.82rem;font-weight:700">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Enviar alerta por WhatsApp
+        </a>
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="alert alert-orange">Error: ${e.message}</div>`;
+  }
+}
+
 async function triggerScan() {
   const days = parseInt(document.getElementById('scanDays').value) || 30;
   const r = await apiFetch('/api/admin/scan', {
