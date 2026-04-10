@@ -513,7 +513,6 @@ def glai_analyze():
         team_b = data.get('teamB', '')
         league = data.get('league', 'soccer')
         sport  = data.get('sport', 'soccer')   # soccer | nba | mlb
-        # xG/PPG/RPG: si el frontend no los manda, la IA los calcula del historial
         _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else 1.4)
         _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else 1.1)
         val_a  = float(data['xgA']) if 'xgA' in data else calc_auto_xg(team_a, sport, _def_a)
@@ -521,15 +520,16 @@ def glai_analyze():
     except Exception as e:
         return jsonify({'error': f'Datos inválidos: {e}'}), 400
 
-    # Tokens restantes: -1 = ilimitado (admin o legacy premium), número real para los demás
-    raw_tokens  = session['user'].get('tokens', 0)
-    tokens_left = raw_tokens if u.get('role') != 'admin' else -1
+    # Tokens restantes
+    tokens_left = session['user'].get('tokens', 0) if u.get('role') != 'admin' else -1
 
     try:
         # ── NBA ─────────────────────────────────────────────────────────
         if sport == 'nba':
             prediction = glai.predict_nba(val_a, val_b)
             bet        = glai.ai_bet_nba(prediction, team_a, team_b)
+            db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+                       details=f'{team_a} vs {team_b} | nba | PPG:{val_a}-{val_b}')
             return jsonify({
                 'ok':         True,
                 'sport':      'nba',
@@ -543,6 +543,8 @@ def glai_analyze():
         if sport == 'mlb':
             prediction = glai.predict_mlb(val_a, val_b)
             bet        = glai.ai_bet_mlb(prediction, team_a, team_b)
+            db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+                       details=f'{team_a} vs {team_b} | mlb | RPG:{val_a}-{val_b}')
             return jsonify({
                 'ok':         True,
                 'sport':      'mlb',
@@ -553,25 +555,33 @@ def glai_analyze():
             })
 
         # ── SOCCER (default) ────────────────────────────────────────────
-        hist_a = tsdb.get_team_history(team_a, limit=5) if team_a else []
-        hist_b = tsdb.get_team_history(team_b, limit=5) if team_b else []
-        try:
-            if team_a: tsdb.learn_team_events(team_a, glai, league_id=league)
-            if team_b: tsdb.learn_team_events(team_b, glai, league_id=league)
-        except Exception:
-            pass  # Si falla TheSportsDB, continúa sin historial extra
+        # Historial desde DB local (rápido, sin llamadas externas)
+        hist_a = glai.team_history(team_a, limit=5) if team_a else []
+        hist_b = glai.team_history(team_b, limit=5) if team_b else []
 
-        # Head-to-Head directo entre los dos equipos
-        h2h = glai.get_h2h(team_a, team_b) if team_a and team_b else None
+        # TheSportsDB en hilo separado — no bloquea el análisis
+        def _fetch_tsdb():
+            try:
+                if team_a: tsdb.learn_team_events(team_a, glai, league_id=league)
+                if team_b: tsdb.learn_team_events(team_b, glai, league_id=league)
+            except Exception:
+                pass
+        threading.Thread(target=_fetch_tsdb, daemon=True).start()
 
         prediction    = glai.predict('soccer', league, val_a, val_b)
-        bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b, h2h=h2h)
+        # ✅ ai_bet NO recibe h2h — se quitó el parámetro que no existía
+        bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b)
         corners_cards = glai.predict_corners_cards(val_a, val_b, league)
         lg_stats      = glai.get_league_stats('soccer', league)
 
     except Exception as e:
+        import traceback
+        print(f"[GLAI analyze error] {traceback.format_exc()}")
         return jsonify({'error': f'Error en análisis: {str(e)}'}), 500
 
+    # ✅ add_log va ANTES del return para que se ejecute
+    db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+               details=f'{team_a} vs {team_b} | soccer | xG:{val_a}-{val_b}')
     return jsonify({
         'ok':         True,
         'sport':      'soccer',
@@ -582,12 +592,10 @@ def glai_analyze():
         'cards':      corners_cards['cards'],
         'histA':      hist_a,
         'histB':      hist_b,
-        'h2h':        h2h,
+        'h2h':        None,
         'lgStats':    lg_stats,
         'total':      glai.total_learned(),
     })
-    db.add_log(u['username'], 'analyze', ip=get_client_ip(),
-               details=f'{team_a} vs {team_b} | {sport} | xG:{val_a}-{val_b}')
 
 @app.route('/api/glai/live', methods=['POST'])
 @require_login
