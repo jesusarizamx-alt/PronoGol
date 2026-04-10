@@ -117,51 +117,6 @@ class GLAIEngine:
             'totalLearned': self.total_learned(),
         }
 
-    # ─── Head-to-Head ─────────────────────────────────────────────
-    def get_h2h(self, team_a, team_b, limit=8):
-        """Historial directo entre dos equipos con estadísticas."""
-        raw = self.db.get_h2h_results(team_a, team_b, limit)
-        if not raw:
-            return {'matches': [], 'winsA': 0, 'winsB': 0, 'draws': 0, 'total': 0,
-                    'pctA': 0, 'pctB': 0, 'pctD': 0}
-        matches = []
-        wins_a = wins_b = draws = 0
-        for r in raw:
-            a_is_home = team_a.lower()[:6] in r['home_team'].lower()
-            hg, ag = r['home_goals'], r['away_goals']
-            if a_is_home:
-                score_a, score_b = hg, ag
-                if hg > ag:   wins_a += 1; result = 'A'
-                elif hg < ag: wins_b += 1; result = 'B'
-                else:         draws  += 1; result = 'D'
-            else:
-                score_a, score_b = ag, hg
-                if ag > hg:   wins_a += 1; result = 'A'
-                elif ag < hg: wins_b += 1; result = 'B'
-                else:         draws  += 1; result = 'D'
-            matches.append({
-                'homeTeam':  r['home_team'],
-                'awayTeam':  r['away_team'],
-                'homeGoals': hg,
-                'awayGoals': ag,
-                'scoreA':    score_a,
-                'scoreB':    score_b,
-                'result':    result,
-                'league':    r['league_id'],
-                'date':      r.get('learned_at', ''),
-            })
-        total = wins_a + wins_b + draws
-        return {
-            'matches': matches,
-            'winsA':   wins_a,
-            'winsB':   wins_b,
-            'draws':   draws,
-            'total':   total,
-            'pctA':    round(wins_a / total * 100) if total else 0,
-            'pctB':    round(wins_b / total * 100) if total else 0,
-            'pctD':    round(draws  / total * 100) if total else 0,
-        }
-
     # ─── Historial por equipo ─────────────────────────────────────
     def team_history(self, team_name, limit=5):
         """Últimos N partidos de un equipo — todas las competencias."""
@@ -192,66 +147,42 @@ class GLAIEngine:
         return hist
 
     # ─── Análisis de apuesta IA ───────────────────────────────────
-    def ai_bet(self, hist_a, hist_b, xg_a, xg_b, team_a, team_b, h2h=None):
+    def ai_bet(self, hist_a, hist_b, xg_a, xg_b, team_a, team_b):
         """
         Genera recomendación de apuesta basada en historial real.
         hist_a / hist_b: listas de dicts con 'myG', 'oppG', 'result'.
-        h2h: dict con historial directo entre los dos equipos.
-        Usa PESO POR RECENCIA: partidos más recientes cuentan más.
         """
-        # ── Promedio ponderado por recencia ──────────────────────
-        def weighted_avg(arr, key):
-            """Partido más reciente = peso más alto (3,2.5,2,1.5,1,1,...)"""
-            if not arr:
-                return 0
-            weights = [max(1.0, 3.5 - i * 0.5) for i in range(len(arr))]
-            total_w = sum(weights)
-            return sum(arr[i][key] * weights[i] for i in range(len(arr))) / total_w
+        def avg(arr, key):
+            return sum(m[key] for m in arr) / len(arr) if arr else 0
 
-        def weighted_rate(arr, fn):
-            if not arr:
-                return 0.5
-            weights = [max(1.0, 3.5 - i * 0.5) for i in range(len(arr))]
-            total_w = sum(weights)
-            return sum(weights[i] for i in range(len(arr)) if fn(arr[i])) / total_w
-
-        avg_scored_a   = weighted_avg(hist_a, 'myG')
-        avg_conceded_a = weighted_avg(hist_a, 'oppG')
-        avg_scored_b   = weighted_avg(hist_b, 'myG')
-        avg_conceded_b = weighted_avg(hist_b, 'oppG')
+        avg_scored_a = avg(hist_a, 'myG')
+        avg_conceded_a = avg(hist_a, 'oppG')
+        avg_scored_b = avg(hist_b, 'myG')
+        avg_conceded_b = avg(hist_b, 'oppG')
 
         has_real = len(hist_a) >= 2 or len(hist_b) >= 2
 
         cross_xg_a = (avg_scored_a + avg_conceded_b) / 2 if has_real else xg_a
         cross_xg_b = (avg_scored_b + avg_conceded_a) / 2 if has_real else xg_b
-
-        # ── Ajuste H2H (si hay historial directo) ────────────────
-        if h2h and h2h.get('total', 0) >= 3:
-            h2h_weight = min(0.25, h2h['total'] / 40)
-            if h2h['pctA'] > 50:
-                cross_xg_a *= (1 + h2h_weight * (h2h['pctA'] - 50) / 100)
-                cross_xg_b *= (1 - h2h_weight * (h2h['pctA'] - 50) / 100)
-            elif h2h['pctB'] > 50:
-                cross_xg_b *= (1 + h2h_weight * (h2h['pctB'] - 50) / 100)
-                cross_xg_a *= (1 - h2h_weight * (h2h['pctB'] - 50) / 100)
-
         cross_total = cross_xg_a + cross_xg_b
 
-        # Usar weighted_rate (ya definida arriba)
-        btts_a = weighted_rate(hist_a, lambda m: m['myG'] > 0 and m['oppG'] > 0)
-        btts_b = weighted_rate(hist_b, lambda m: m['myG'] > 0 and m['oppG'] > 0)
+        def rate(arr, fn):
+            return sum(1 for m in arr if fn(m)) / len(arr) if arr else 0.5
+
+        btts_a = rate(hist_a, lambda m: m['myG'] > 0 and m['oppG'] > 0)
+        btts_b = rate(hist_b, lambda m: m['myG'] > 0 and m['oppG'] > 0)
         btts_comb = round((btts_a + btts_b) / 2 * 100)
 
-        o25_a = weighted_rate(hist_a, lambda m: m['myG'] + m['oppG'] > 2.5)
-        o25_b = weighted_rate(hist_b, lambda m: m['myG'] + m['oppG'] > 2.5)
+        o25_a = rate(hist_a, lambda m: m['myG'] + m['oppG'] > 2.5)
+        o25_b = rate(hist_b, lambda m: m['myG'] + m['oppG'] > 2.5)
         o25_comb = round((o25_a + o25_b) / 2 * 100)
 
-        o15_a = weighted_rate(hist_a, lambda m: m['myG'] + m['oppG'] > 1.5)
-        o15_b = weighted_rate(hist_b, lambda m: m['myG'] + m['oppG'] > 1.5)
+        o15_a = rate(hist_a, lambda m: m['myG'] + m['oppG'] > 1.5)
+        o15_b = rate(hist_b, lambda m: m['myG'] + m['oppG'] > 1.5)
         o15_comb = round((o15_a + o15_b) / 2 * 100)
 
-        win_a = weighted_rate(hist_a, lambda m: m['result'] == 'G')
-        win_b = weighted_rate(hist_b, lambda m: m['result'] == 'G')
+        win_a = rate(hist_a, lambda m: m['result'] == 'G')
+        win_b = rate(hist_b, lambda m: m['result'] == 'G')
 
         bets = []
         if btts_comb >= 60:
@@ -409,180 +340,6 @@ class GLAIEngine:
         self._scan_progress['msg'] = msg
         if learned is not None:
             self._scan_progress['learned'] = learned
-
-    # ─── Predicción EN VIVO ───────────────────────────────────────
-    def predict_live_soccer(self, home_score, away_score, minute, home_xg=1.4, away_xg=1.1):
-        """
-        Predicción en vivo fútbol.
-        Calcula probabilidad de resultado final dado el marcador actual y el minuto.
-        """
-        stoppage   = 5 if minute >= 85 else (4 if minute >= 75 else 3)
-        total_time = 90 + stoppage
-        remaining  = max(0, total_time - minute)
-        time_factor = remaining / 90.0
-
-        adj_xg_h = home_xg * time_factor
-        adj_xg_a = away_xg * time_factor
-
-        # Equipo que va perdiendo ataca más
-        diff = home_score - away_score
-        if diff < 0:
-            adj_xg_h *= min(1.35, 1 + abs(diff) * 0.13)
-            adj_xg_a *= max(0.80, 1 - abs(diff) * 0.07)
-        elif diff > 0:
-            adj_xg_a *= min(1.35, 1 + abs(diff) * 0.13)
-            adj_xg_h *= max(0.80, 1 - abs(diff) * 0.07)
-
-        max_add = 7
-        p_hw = p_d = p_aw = 0.0
-        top_scores = []
-
-        for ah in range(max_add + 1):
-            for aa in range(max_add + 1):
-                p = self._poisson(adj_xg_h, ah) * self._poisson(adj_xg_a, aa)
-                fh, fa = home_score + ah, away_score + aa
-                if fh > fa:   p_hw += p
-                elif fh < fa: p_aw += p
-                else:         p_d  += p
-                if p > 0.004:
-                    top_scores.append({'h': fh, 'a': fa, 'p': round(p, 4)})
-
-        # Ventaja del marcador actual pesa más conforme avanza el partido
-        elapsed = minute / total_time
-        if diff != 0 and elapsed > 0.3:
-            w = min(0.65, elapsed * 0.7)
-            if diff > 0:
-                p_hw = p_hw * (1 - w) + (0.82 + min(0.13, diff * 0.05)) * w
-                p_d  = p_d  * (1 - w) + 0.12 * w
-                p_aw = 1 - p_hw - p_d
-            else:
-                p_aw = p_aw * (1 - w) + (0.82 + min(0.13, abs(diff) * 0.05)) * w
-                p_d  = p_d  * (1 - w) + 0.12 * w
-                p_hw = 1 - p_aw - p_d
-
-        p_hw = max(0.01, min(0.97, p_hw))
-        p_aw = max(0.01, min(0.97, p_aw))
-        p_d  = max(0.01, 1 - p_hw - p_aw)
-
-        top_scores.sort(key=lambda x: x['p'], reverse=True)
-        best = top_scores[0] if top_scores else {'h': home_score, 'a': away_score}
-
-        return {
-            'pctA':       round(p_hw * 100),
-            'pctD':       round(p_d  * 100),
-            'pctB':       round(p_aw * 100),
-            'projFinalH': best['h'],
-            'projFinalA': best['a'],
-            'remaining':  round(remaining),
-            'minute':     minute,
-            'adjXgH':     round(adj_xg_h, 2),
-            'adjXgA':     round(adj_xg_a, 2),
-            'topScores':  top_scores[:6],
-        }
-
-    def predict_live_nba(self, home_score, away_score, period, home_ppg=115.0, away_ppg=112.0):
-        """
-        Predicción en vivo NBA.
-        period: 1-4 (cuarto actual), 5+ overtime.
-        """
-        HOME_ADV = 3.0
-        SIGMA    = 12.0
-        q_factors = [0.245, 0.250, 0.245, 0.260]
-
-        adj_ppg_h = home_ppg + HOME_ADV
-        period_idx = min(period - 1, 3)
-
-        # Puntos restantes: desde el cuarto actual hasta el 4
-        rem_h = sum(adj_ppg_h * q_factors[i] for i in range(period_idx, 4))
-        rem_a = sum(away_ppg  * q_factors[i] for i in range(period_idx, 4))
-
-        proj_h = home_score + rem_h
-        proj_a = away_score + rem_a
-        quarters_left = max(0, 4 - period)
-
-        sigma_adj = SIGMA * math.sqrt(max(0.25, quarters_left / 4))
-        diff_proj  = proj_h - proj_a
-        z = diff_proj / (sigma_adj * math.sqrt(2) + 1e-9)
-        p_home = 0.5 + 0.5 * math.erf(z)
-
-        # Peso del marcador real aumenta con el tiempo
-        actual_diff = home_score - away_score
-        elapsed = period_idx / 4
-        if actual_diff != 0 and elapsed > 0.25:
-            w = min(0.70, elapsed * 0.75)
-            if actual_diff > 0:
-                p_home = p_home * (1 - w) + (0.75 + min(0.20, actual_diff / 50)) * w
-            else:
-                p_home = p_home * (1 - w) + (0.25 - min(0.20, abs(actual_diff) / 50)) * w
-
-        p_home = max(0.02, min(0.98, p_home))
-        p_away = 1 - p_home
-
-        return {
-            'pctA':       round(p_home * 100),
-            'pctB':       round(p_away * 100),
-            'projFinalH': round(proj_h),
-            'projFinalA': round(proj_a),
-            'period':     period,
-            'quartersLeft': quarters_left,
-            'remH':       round(rem_h),
-            'remA':       round(rem_a),
-        }
-
-    def predict_live_mlb(self, home_score, away_score, inning, half='bottom',
-                          home_rpg=4.5, away_rpg=4.2):
-        """
-        Predicción en vivo MLB.
-        inning: 1-9+, half: 'top'(visita batea) | 'bottom'(local batea).
-        """
-        # Entradas restantes para cada equipo
-        if half == 'top':
-            away_inn_left = max(0, 9 - inning + 1)
-            home_inn_left = max(0, 9 - inning + 1)
-        else:
-            away_inn_left = max(0, 9 - inning)
-            home_inn_left = max(0, 9 - inning + 1)
-
-        home_rpi = home_rpg / 9.0
-        away_rpi = away_rpg / 9.0
-        exp_h = home_rpi * home_inn_left
-        exp_a = away_rpi * away_inn_left
-
-        max_r = 12
-        p_hw = p_aw = p_tie = 0.0
-        top_scores = []
-
-        for ah in range(max_r + 1):
-            for aa in range(max_r + 1):
-                p = self._poisson(exp_h, ah) * self._poisson(exp_a, aa)
-                fh, fa = home_score + ah, away_score + aa
-                if fh > fa:   p_hw  += p
-                elif fh < fa: p_aw  += p
-                else:         p_tie += p
-                if p > 0.004:
-                    top_scores.append({'h': fh, 'a': fa, 'p': round(p, 4)})
-
-        p_hw += p_tie * 0.52
-        p_aw += p_tie * 0.48
-        tot   = p_hw + p_aw
-        p_hw /= tot
-        p_aw /= tot
-
-        top_scores.sort(key=lambda x: x['p'], reverse=True)
-        best = top_scores[0] if top_scores else {'h': home_score, 'a': away_score}
-
-        return {
-            'pctA':       round(p_hw * 100),
-            'pctB':       round(p_aw * 100),
-            'projFinalH': best['h'],
-            'projFinalA': best['a'],
-            'inning':     inning,
-            'half':       half,
-            'inningsLeft': max(away_inn_left, home_inn_left),
-            'expH':       round(exp_h, 1),
-            'expA':       round(exp_a, 1),
-            'topScores':  top_scores[:5],
-        }
 
     # ─── NBA — Predicción ─────────────────────────────────────────
     def predict_nba(self, home_ppg, away_ppg):
@@ -818,6 +575,7 @@ class GLAIEngine:
         """
         Escaneo autónomo en segundo plano.
         Llamado por APScheduler — no bloquea el servidor.
+        Incluye: ESPN, TheSportsDB, Sportradar Soccer/NBA/MLB (si hay key).
         """
         if self._scan_lock.locked():
             print("[GLAI] Auto-scan ya en curso, saltando.")
@@ -835,16 +593,50 @@ class GLAIEngine:
                 espn = ESPNScraper(self.db.get_all_keys())
                 tsdb = TheSportsDBScraper()
 
-                self.set_progress(5, 'Escaneando ESPN...', 0)
+                self.set_progress(5, 'Escaneando ESPN (Soccer/NBA/MLB)...', 0)
                 n = espn.scan(days_back=days_back, glai=self, on_progress=self.set_progress)
                 total_learned += n
                 used_sources.append('ESPN')
-                self.set_progress(60, f'ESPN: {n} resultados · Escaneando TheSportsDB...', total_learned)
+                self.set_progress(30, f'ESPN: {n} resultados · Escaneando TheSportsDB...', total_learned)
 
                 n2 = tsdb.scan_top_leagues(days_back=days_back, glai=self)
                 total_learned += n2
                 used_sources.append('TheSportsDB')
-                self.set_progress(90, f'TheSportsDB: {n2} resultados · Finalizando...', total_learned)
+                self.set_progress(50, f'TheSportsDB: {n2} resultados · Verificando Sportradar...', total_learned)
+
+                # ── SPORTRADAR Soccer/NBA/MLB (si hay SPORTRADAR_API_KEY) ──────
+                try:
+                    from scrapers.sportradar import SportradarScraper
+                    from scrapers.sportradar_nba import SportradarNBAScraper
+                    from scrapers.sportradar_mlb import SportradarMLBScraper
+
+                    sprt = SportradarScraper(db=self.db)
+                    if sprt._ok():
+                        self.set_progress(52, 'Sportradar Soccer — escaneando...', total_learned)
+                        ns = sprt.scan(days_back=days_back, glai=self)
+                        total_learned += ns
+                        used_sources.append('Sportradar Soccer')
+                        print(f"[GLAI] Sportradar Soccer: {ns} resultados")
+
+                    snba = SportradarNBAScraper(db=self.db)
+                    if snba._ok():
+                        self.set_progress(62, 'Sportradar NBA — escaneando...', total_learned)
+                        nn = snba.scan(days_back=days_back, glai=self)
+                        total_learned += nn
+                        used_sources.append('Sportradar NBA')
+                        print(f"[GLAI] Sportradar NBA: {nn} resultados")
+
+                    smlb = SportradarMLBScraper(db=self.db)
+                    if smlb._ok():
+                        self.set_progress(72, 'Sportradar MLB — escaneando...', total_learned)
+                        nm = smlb.scan(days_back=days_back, glai=self)
+                        total_learned += nm
+                        used_sources.append('Sportradar MLB')
+                        print(f"[GLAI] Sportradar MLB: {nm} resultados")
+                except Exception as e_sr:
+                    print(f"[GLAI] Sportradar skipped: {e_sr}")
+
+                self.set_progress(85, f'Sportradar completo · Finalizando...', total_learned)
 
                 # BeSoccer si hay key
                 if self.db.get_key('besoccer'):
