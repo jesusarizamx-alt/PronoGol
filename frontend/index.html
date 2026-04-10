@@ -1735,19 +1735,26 @@ function renderGlai(d, teamA, teamB) {
     <div class="probSeg probB" style="width:${pB}%">${pB>8?pB+'%':''}<span style="font-size:.65rem;opacity:.8">${pB>8?teamB:''}</span></div>`;
 
   // ── xG cards ───────────────────────────────────
+  const dq  = pred.dataQuality ?? 0;
+  const dqColor = dq >= 70 ? '#00e676' : dq >= 35 ? '#ffd700' : '#ff9800';
   document.getElementById('xgRow').innerHTML = `
     <div class="xgCard"><div class="xgVal">${pred.xgA||'?'}</div><div class="xgLbl">xG — ${teamA}</div></div>
     <div class="xgCard"><div class="xgVal" style="color:var(--orange)">${pred.xgB||'?'}</div><div class="xgLbl">xG — ${teamB}</div></div>
     <div class="xgCard"><div class="xgVal" style="color:var(--purple)">${pred.btts||0}%</div><div class="xgLbl">Ambos Anotan</div></div>
-    <div class="xgCard"><div class="xgVal" style="color:var(--green)">${pred.over25||0}%</div><div class="xgLbl">Más de 2.5</div></div>`;
+    <div class="xgCard"><div class="xgVal" style="color:var(--green)">${pred.over25||0}%</div><div class="xgLbl">+2.5 Goles</div></div>
+    <div class="xgCard"><div class="xgVal" style="color:${dqColor}">${dq}%</div><div class="xgLbl">Calidad Datos</div></div>`;
 
   // ── Mini stats ──────────────────────────────────
   const winning = pA > pB && pA > pD ? teamA : (pB > pA && pB > pD ? teamB : 'EMPATE');
   const winPct  = Math.max(pA, pD, pB);
+  const modelTag = pred.strength && (pred.strength.nA || pred.strength.nB)
+    ? `<span style="font-size:.65rem;color:var(--green)">⚡ Ratings</span>`
+    : `<span style="font-size:.65rem;color:var(--muted)">Poisson</span>`;
   document.getElementById('miniStats').innerHTML = `
     <div class="miniStat"><div class="miniStatVal" style="color:var(--green)">${winning}</div><div class="miniStatLbl">Favorito</div></div>
-    <div class="miniStat"><div class="miniStatVal">${winPct}%</div><div class="miniStatLbl">Confianza</div></div>
-    <div class="miniStat"><div class="miniStatVal" style="color:var(--gold)">${d.total||0}</div><div class="miniStatLbl">Partidos GLAI aprendió</div></div>`;
+    <div class="miniStat"><div class="miniStatVal">${winPct}%</div><div class="miniStatLbl">Prob. máxima</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--gold)">${d.total||0}</div><div class="miniStatLbl">Partidos aprendidos</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:${dqColor}">${dq}%</div><div class="miniStatLbl">Calidad modelo ${modelTag}</div></div>`;
 
   // ── Matriz marcadores ───────────────────────────
   const matrix = (pred.matrix || []).slice(0, 10);
@@ -1785,12 +1792,27 @@ function renderGlai(d, teamA, teamB) {
         <div class="betReason">${alt.reason}</div>
       </div>`;
   }
+  // ── Data quality badge + métricas clave ────────────────────────
+  const cs = bet.confidenceScore ?? (bet.hasRealData ? 50 : 15);
+  const csColor = cs >= 70 ? 'var(--green)' : cs >= 40 ? 'var(--gold)' : 'var(--orange)';
+  const csLabel = cs >= 70 ? '🟢 Alta confianza' : cs >= 40 ? '🟡 Confianza media' : '🔴 Pocos datos';
+  const h2hTag  = bet.h2h && bet.h2h.n
+    ? `<span class="tag tag-purple">🤝 H2H: ${bet.h2h.n} partidos · A gana ${bet.h2h.winRateA||0}%</span>` : '';
+  const splitTag = (bet.homeWinA !== undefined && bet.homeWinA > 0)
+    ? `<span class="tag tag-blue">🏠 Local ${bet.homeWinA}% · ✈️ Visita ${bet.awayWinB}%</span>` : '';
   betHtml += `
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
+      <span class="tag" style="background:${csColor}22;color:${csColor};border:1px solid ${csColor}66">
+        ${csLabel} · ${cs}%
+      </span>
       ${bet.hasRealData ? '<span class="tag tag-green">✅ Datos reales</span>' : '<span class="tag tag-orange">⚠️ Sin historial real</span>'}
-      <span class="tag tag-blue">xG cruzado: ${bet.crossXgA||'?'} - ${bet.crossXgB||'?'}</span>
-      <span class="tag tag-purple">BTTS real: ${bet.btts||0}%</span>
-      <span class="tag tag-orange">+2.5 real: ${bet.over25||0}%</span>
+      ${h2hTag}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+      <span class="tag tag-blue">xG cruzado: ${bet.crossXgA||'?'} – ${bet.crossXgB||'?'}</span>
+      <span class="tag tag-purple">BTTS: ${bet.btts||0}%</span>
+      <span class="tag tag-orange">+2.5 goles: ${bet.over25||0}%</span>
+      ${splitTag}
     </div>`;
   document.getElementById('betContent').innerHTML = betHtml;
 
