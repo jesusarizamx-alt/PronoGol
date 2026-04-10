@@ -8,7 +8,13 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "soccer_predictor.db"
+# Usa disco persistente en Render (/data) si existe, si no usa la carpeta local
+import os
+_PERSISTENT = Path("/data")
+if _PERSISTENT.exists():
+    DB_PATH = _PERSISTENT / "soccer_predictor.db"
+else:
+    DB_PATH = Path(__file__).parent / "soccer_predictor.db"
 
 class Database:
     def __init__(self, path=DB_PATH):
