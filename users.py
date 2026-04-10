@@ -131,6 +131,9 @@ class UserManager:
             return False
         if row['role'] == 'admin':
             return True  # ilimitado
+        # -1 = legacy premium ilimitado (usuarios creados antes del sistema de tokens)
+        if row['tokens'] == -1:
+            return True
         if row['tokens'] <= 0:
             return False
         c.execute("UPDATE users SET tokens = tokens - 1 WHERE username=?",

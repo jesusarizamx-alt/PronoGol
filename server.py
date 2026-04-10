@@ -246,57 +246,67 @@ def glai_analyze():
                            'msg': 'Sin tokens disponibles. Contacta al admin.'}), 403
         session['user'] = users.get_user(u['username'])
 
-    data   = request.get_json() or {}
-    team_a = data.get('teamA', '')
-    team_b = data.get('teamB', '')
-    league = data.get('league', 'soccer')
-    sport  = data.get('sport', 'soccer')   # soccer | nba | mlb
-    val_a  = float(data.get('xgA', 1.4))  # xG / PPG / RPG
-    val_b  = float(data.get('xgB', 1.1))
-    # Tokens restantes: -1 = ilimitado (admin), número real para todos los demás
-    tokens_left = session['user'].get('tokens') if u.get('role') != 'admin' else -1
+    try:
+        data   = request.get_json() or {}
+        team_a = data.get('teamA', '')
+        team_b = data.get('teamB', '')
+        league = data.get('league', 'soccer')
+        sport  = data.get('sport', 'soccer')   # soccer | nba | mlb
+        val_a  = float(data.get('xgA', 1.4))  # xG / PPG / RPG
+        val_b  = float(data.get('xgB', 1.1))
+    except Exception as e:
+        return jsonify({'error': f'Datos inválidos: {e}'}), 400
 
-    # ── NBA ─────────────────────────────────────────────────────────
-    if sport == 'nba':
-        prediction = glai.predict_nba(val_a, val_b)
-        bet        = glai.ai_bet_nba(prediction, team_a, team_b)
-        return jsonify({
-            'ok':         True,
-            'sport':      'nba',
-            'tokensLeft': tokens_left,
-            'prediction': prediction,
-            'bet':        bet,
-            'total':      glai.total_learned(),
-        })
+    # Tokens restantes: -1 = ilimitado (admin o legacy premium), número real para los demás
+    raw_tokens  = session['user'].get('tokens', 0)
+    tokens_left = raw_tokens if u.get('role') != 'admin' else -1
 
-    # ── MLB ─────────────────────────────────────────────────────────
-    if sport == 'mlb':
-        prediction = glai.predict_mlb(val_a, val_b)
-        bet        = glai.ai_bet_mlb(prediction, team_a, team_b)
-        return jsonify({
-            'ok':         True,
-            'sport':      'mlb',
-            'tokensLeft': tokens_left,
-            'prediction': prediction,
-            'bet':        bet,
-            'total':      glai.total_learned(),
-        })
+    try:
+        # ── NBA ─────────────────────────────────────────────────────────
+        if sport == 'nba':
+            prediction = glai.predict_nba(val_a, val_b)
+            bet        = glai.ai_bet_nba(prediction, team_a, team_b)
+            return jsonify({
+                'ok':         True,
+                'sport':      'nba',
+                'tokensLeft': tokens_left,
+                'prediction': prediction,
+                'bet':        bet,
+                'total':      glai.total_learned(),
+            })
 
-    # ── SOCCER (default) ────────────────────────────────────────────
-    hist_a = tsdb.get_team_history(team_a, limit=5) if team_a else []
-    hist_b = tsdb.get_team_history(team_b, limit=5) if team_b else []
-    if team_a:
-        tsdb.learn_team_events(team_a, glai, league_id=league)
-    if team_b:
-        tsdb.learn_team_events(team_b, glai, league_id=league)
+        # ── MLB ─────────────────────────────────────────────────────────
+        if sport == 'mlb':
+            prediction = glai.predict_mlb(val_a, val_b)
+            bet        = glai.ai_bet_mlb(prediction, team_a, team_b)
+            return jsonify({
+                'ok':         True,
+                'sport':      'mlb',
+                'tokensLeft': tokens_left,
+                'prediction': prediction,
+                'bet':        bet,
+                'total':      glai.total_learned(),
+            })
 
-    # Head-to-Head directo entre los dos equipos
-    h2h = glai.get_h2h(team_a, team_b) if team_a and team_b else None
+        # ── SOCCER (default) ────────────────────────────────────────────
+        hist_a = tsdb.get_team_history(team_a, limit=5) if team_a else []
+        hist_b = tsdb.get_team_history(team_b, limit=5) if team_b else []
+        try:
+            if team_a: tsdb.learn_team_events(team_a, glai, league_id=league)
+            if team_b: tsdb.learn_team_events(team_b, glai, league_id=league)
+        except Exception:
+            pass  # Si falla TheSportsDB, continúa sin historial extra
 
-    prediction    = glai.predict('soccer', league, val_a, val_b)
-    bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b, h2h=h2h)
-    corners_cards = glai.predict_corners_cards(val_a, val_b, league)
-    lg_stats      = glai.get_league_stats('soccer', league)
+        # Head-to-Head directo entre los dos equipos
+        h2h = glai.get_h2h(team_a, team_b) if team_a and team_b else None
+
+        prediction    = glai.predict('soccer', league, val_a, val_b)
+        bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b, h2h=h2h)
+        corners_cards = glai.predict_corners_cards(val_a, val_b, league)
+        lg_stats      = glai.get_league_stats('soccer', league)
+
+    except Exception as e:
+        return jsonify({'error': f'Error en análisis: {str(e)}'}), 500
 
     return jsonify({
         'ok':         True,
