@@ -6,7 +6,8 @@ Abre: http://localhost:5000
 from flask import Flask, request, jsonify, session, send_from_directory
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
-import os, threading, secrets
+import os, threading, secrets, string, random
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from database import Database
@@ -80,6 +81,19 @@ def calc_auto_xg(team, sport='soccer', default=1.4):
     except Exception:
         return default
 
+# ── Helpers de códigos e IP ───────────────────────────────────────
+def get_client_ip():
+    """Obtiene la IP real del cliente (considera proxies de Render)."""
+    return (request.headers.get('X-Forwarded-For', '') or '').split(',')[0].strip() \
+           or request.remote_addr or 'unknown'
+
+def generate_invite_code():
+    """Genera un código único tipo PRONO-XXXX-XXXX."""
+    chars = string.ascii_uppercase + string.digits
+    part1 = ''.join(random.choices(chars, k=4))
+    part2 = ''.join(random.choices(chars, k=4))
+    return f"PRONO-{part1}-{part2}"
+
 # ── Scheduler — GLAI aprende sola cada 2 horas ───────────────────
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(
@@ -143,33 +157,68 @@ def login():
         return jsonify({'error': 'Completa usuario y contraseña'}), 400
     user = users.login(username, password)
     if not user:
+        db.add_log(username, 'login_failed', ip=get_client_ip(), details='Contraseña incorrecta')
         return jsonify({'error': 'Usuario o contraseña incorrectos'}), 401
     session['user'] = user
     session.permanent = True
+    db.add_log(username, 'login', ip=get_client_ip())
     return jsonify({'ok': True, 'user': user})
 
 @app.route('/api/auth/register', methods=['POST'])
 def register():
+    """Registro solo con código de invitación válido."""
     data     = request.get_json() or {}
-    username = (data.get('username') or '').strip()
+    code     = (data.get('code') or '').strip().upper()
     password = (data.get('password') or '').strip()
-    if not username or not password:
-        return jsonify({'error': 'Completa usuario y contraseña'}), 400
-    if len(username) < 3:
-        return jsonify({'error': 'El usuario debe tener al menos 3 caracteres'}), 400
+    ip       = get_client_ip()
+
+    if not code:
+        return jsonify({'error': 'Se requiere un código de invitación'}), 400
     if len(password) < 6:
         return jsonify({'error': 'La contraseña debe tener al menos 6 caracteres'}), 400
+
+    # Validar código
+    invite = db.get_invite_code(code)
+    if not invite:
+        db.add_log('unknown', 'register_failed', ip=ip, details=f'Código inválido: {code}')
+        return jsonify({'error': 'Código de invitación inválido'}), 400
+    if invite['used_at']:
+        db.add_log('unknown', 'register_failed', ip=ip, details=f'Código ya usado: {code}')
+        return jsonify({'error': 'Este código ya fue utilizado'}), 400
+    if invite['expires_at'] and invite['expires_at'] < datetime.utcnow().isoformat():
+        db.add_log('unknown', 'register_failed', ip=ip, details=f'Código expirado: {code}')
+        return jsonify({'error': 'Este código ha expirado'}), 400
+
+    username = invite['username']
     try:
-        # 5 tokens gratis de bienvenida, rol free
-        user = users.create_user(username, password, 'free', 5)
+        user = users.create_user(username, password, invite['role'], invite['tokens'])
+        db.use_invite_code(code, ip)
+        db.add_log(username, 'register', ip=ip, details=f'Código: {code} | Rol: {invite["role"]}')
         session['user'] = user
         session.permanent = True
         return jsonify({'ok': True, 'user': user})
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 
+@app.route('/api/auth/validate-code', methods=['POST'])
+def validate_code():
+    """Verifica si un código es válido y devuelve el username asignado."""
+    data = request.get_json() or {}
+    code = (data.get('code') or '').strip().upper()
+    if not code:
+        return jsonify({'valid': False}), 400
+    invite = db.get_invite_code(code)
+    if not invite or invite['used_at']:
+        return jsonify({'valid': False, 'error': 'Código inválido o ya usado'}), 400
+    if invite['expires_at'] and invite['expires_at'] < datetime.utcnow().isoformat():
+        return jsonify({'valid': False, 'error': 'Código expirado'}), 400
+    return jsonify({'valid': True, 'username': invite['username'], 'role': invite['role']})
+
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
+    u = current_user()
+    if u:
+        db.add_log(u['username'], 'logout', ip=get_client_ip())
     session.clear()
     return jsonify({'ok': True})
 
@@ -363,6 +412,7 @@ def glai_analyze():
     if u.get('role') != 'admin':
         ok = users.use_token(u['username'])
         if not ok:
+            db.add_log(u['username'], 'analyze_failed', ip=get_client_ip(), details='Sin tokens')
             return jsonify({'error': 'no_tokens',
                            'msg': 'Sin tokens disponibles. Contacta al admin.'}), 403
         session['user'] = users.get_user(u['username'])
@@ -446,6 +496,8 @@ def glai_analyze():
         'lgStats':    lg_stats,
         'total':      glai.total_learned(),
     })
+    db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+               details=f'{team_a} vs {team_b} | {sport} | xG:{val_a}-{val_b}')
 
 @app.route('/api/glai/live', methods=['POST'])
 @require_login
@@ -568,6 +620,81 @@ def admin_trigger_scan():
     t = threading.Thread(target=glai.auto_scan, args=(days,), daemon=True)
     t.start()
     return jsonify({'ok': True, 'msg': f'Scan histórico iniciado ({days} días)'})
+
+# ════════════════════════════════════════════════════════════════
+# RUTAS — CÓDIGOS DE INVITACIÓN
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/admin/codes', methods=['GET'])
+@require_admin
+def admin_list_codes():
+    codes = db.list_invite_codes()
+    return jsonify({'codes': codes})
+
+@app.route('/api/admin/codes', methods=['POST'])
+@require_admin
+def admin_create_code():
+    data     = request.get_json() or {}
+    username = (data.get('username') or '').strip()
+    role     = data.get('role', 'premium')
+    tokens   = int(data.get('tokens', 10))
+    days     = data.get('expires_days')  # None = no expira
+    admin    = current_user()['username']
+
+    if not username or len(username) < 3:
+        return jsonify({'error': 'Username inválido (mín. 3 caracteres)'}), 400
+    if users.get_user(username):
+        return jsonify({'error': f'El usuario "{username}" ya existe'}), 400
+
+    # Verificar que no haya un código activo para ese username
+    activos = [c for c in db.list_invite_codes()
+               if c['username'] == username and not c['used_at']]
+    if activos:
+        return jsonify({'error': f'Ya existe un código activo para "{username}"'}), 400
+
+    # Generar código único
+    code = generate_invite_code()
+    while db.get_invite_code(code):
+        code = generate_invite_code()
+
+    expires_at = None
+    if days:
+        expires_at = (datetime.utcnow() + timedelta(days=int(days))).isoformat()
+
+    db.create_invite_code(code, username, role, tokens, admin, expires_at)
+    db.add_log(admin, 'code_generated', ip=get_client_ip(),
+               details=f'Código {code} para "{username}" | rol={role} | tokens={tokens}')
+
+    return jsonify({'ok': True, 'code': code, 'username': username,
+                    'role': role, 'tokens': tokens, 'expires_at': expires_at})
+
+@app.route('/api/admin/codes/<code>', methods=['DELETE'])
+@require_admin
+def admin_revoke_code(code):
+    invite = db.get_invite_code(code)
+    if not invite:
+        return jsonify({'error': 'Código no encontrado'}), 404
+    if invite['used_at']:
+        return jsonify({'error': 'No se puede revocar un código ya usado'}), 400
+    db.revoke_invite_code(code)
+    admin = current_user()['username']
+    db.add_log(admin, 'code_revoked', ip=get_client_ip(), details=f'Código revocado: {code}')
+    return jsonify({'ok': True})
+
+# ════════════════════════════════════════════════════════════════
+# RUTAS — LOGS
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/admin/logs')
+@require_admin
+def admin_all_logs():
+    limit = int(request.args.get('limit', 200))
+    logs = db.get_all_logs(limit=limit)
+    return jsonify({'logs': logs})
+
+@app.route('/api/admin/logs/<username>')
+@require_admin
+def admin_user_logs(username):
+    logs = db.get_user_logs(username, limit=100)
+    return jsonify({'username': username, 'logs': logs})
 
 # ════════════════════════════════════════════════════════════════
 # RUTAS — PARTIDOS CLAVE (alertas VIP)

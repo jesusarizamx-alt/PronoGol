@@ -105,10 +105,35 @@ class Database:
             created_at  TEXT NOT NULL
         );
 
+        -- Códigos de invitación
+        CREATE TABLE IF NOT EXISTS invite_codes (
+            code        TEXT PRIMARY KEY,
+            username    TEXT NOT NULL,      -- username pre-asignado por admin
+            role        TEXT NOT NULL DEFAULT 'premium',
+            tokens      INTEGER NOT NULL DEFAULT 10,
+            created_by  TEXT NOT NULL,      -- admin que lo generó
+            created_at  TEXT NOT NULL,
+            expires_at  TEXT,               -- NULL = nunca expira
+            used_at     TEXT,               -- NULL = pendiente
+            used_ip     TEXT                -- IP que lo usó
+        );
+
+        -- Logs de actividad por cuenta
+        CREATE TABLE IF NOT EXISTS account_logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            username    TEXT NOT NULL,
+            event       TEXT NOT NULL,  -- register|login|logout|analyze|code_generated|code_used
+            ip          TEXT,
+            details     TEXT,           -- info extra en texto
+            created_at  TEXT NOT NULL
+        );
+
         -- Índices para búsquedas frecuentes
         CREATE INDEX IF NOT EXISTS idx_results_league ON match_results(sport, league_id);
         CREATE INDEX IF NOT EXISTS idx_results_teams  ON match_results(home_team, away_team);
         CREATE INDEX IF NOT EXISTS idx_results_source ON match_results(source);
+        CREATE INDEX IF NOT EXISTS idx_logs_username  ON account_logs(username);
+        CREATE INDEX IF NOT EXISTS idx_logs_event     ON account_logs(event);
         """)
         c.commit()
 
@@ -259,3 +284,74 @@ class Database:
             "SELECT * FROM scan_log WHERE status='done' ORDER BY finished_at DESC LIMIT 1"
         ).fetchone()
         return dict(r) if r else None
+
+    # ─── invite_codes ────────────────────────────────────────────
+    def create_invite_code(self, code, username, role, tokens, created_by, expires_at=None):
+        with self._write_lock:
+            c = self._conn()
+            c.execute("""
+                INSERT INTO invite_codes (code, username, role, tokens, created_by, created_at, expires_at)
+                VALUES (?,?,?,?,?,?,?)
+            """, (code, username, role, tokens, created_by,
+                  datetime.utcnow().isoformat(), expires_at))
+            c.commit()
+
+    def get_invite_code(self, code):
+        r = self._conn().execute(
+            "SELECT * FROM invite_codes WHERE code=?", (code,)).fetchone()
+        return dict(r) if r else None
+
+    def use_invite_code(self, code, used_ip):
+        with self._write_lock:
+            c = self._conn()
+            c.execute("""
+                UPDATE invite_codes SET used_at=?, used_ip=? WHERE code=?
+            """, (datetime.utcnow().isoformat(), used_ip, code))
+            c.commit()
+
+    def revoke_invite_code(self, code):
+        with self._write_lock:
+            c = self._conn()
+            c.execute("DELETE FROM invite_codes WHERE code=?", (code,))
+            c.commit()
+
+    def list_invite_codes(self):
+        rows = self._conn().execute(
+            "SELECT * FROM invite_codes ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_used_expired_codes(self):
+        """Limpia códigos usados y expirados."""
+        with self._write_lock:
+            c = self._conn()
+            now = datetime.utcnow().isoformat()
+            c.execute("""
+                DELETE FROM invite_codes
+                WHERE used_at IS NOT NULL
+                   OR (expires_at IS NOT NULL AND expires_at < ?)
+            """, (now,))
+            c.commit()
+
+    # ─── account_logs ────────────────────────────────────────────
+    def add_log(self, username, event, ip=None, details=None):
+        with self._write_lock:
+            c = self._conn()
+            c.execute("""
+                INSERT INTO account_logs (username, event, ip, details, created_at)
+                VALUES (?,?,?,?,?)
+            """, (username, event, ip, details, datetime.utcnow().isoformat()))
+            c.commit()
+
+    def get_user_logs(self, username, limit=50):
+        rows = self._conn().execute("""
+            SELECT * FROM account_logs WHERE username=?
+            ORDER BY created_at DESC LIMIT ?
+        """, (username, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_all_logs(self, limit=200):
+        rows = self._conn().execute("""
+            SELECT * FROM account_logs ORDER BY created_at DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
