@@ -306,6 +306,26 @@ nav button.active{font-weight:700}
 .upgradeFeats li:last-child{border:none}
 .upgradeActions{display:flex;flex-direction:column;gap:10px}
 .upgradeActions .btn{width:100%;padding:13px;font-size:1rem;border-radius:10px}
+
+/* ── PARLAY BUILDER ── */
+.parlayFab{position:fixed;bottom:24px;right:20px;z-index:999;background:var(--blue);color:#fff;border:none;border-radius:50px;padding:12px 20px;font-size:.92rem;font-weight:800;cursor:pointer;box-shadow:0 4px 20px #1a73e860;display:none;align-items:center;gap:8px;transition:.2s}
+.parlayFab:hover{background:#1a73e8;transform:translateY(-2px)}
+.parlayFab .badge{background:#f44336;border-radius:50%;width:20px;height:20px;font-size:.7rem;display:flex;align-items:center;justify-content:center;font-weight:900}
+.addParlayBtn{background:none;border:1.5px solid var(--blue);color:var(--blue);border-radius:6px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer;transition:.15s;white-space:nowrap}
+.addParlayBtn:hover,.addParlayBtn.selected{background:var(--blue);color:#fff}
+.addParlayBtn.selected{border-color:var(--blue)}
+.parlayMatchRow{background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;position:relative}
+.parlayMatchRow .removeBtn{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:1rem}
+.parlayMatchRow .removeBtn:hover{color:var(--red)}
+.parlayResult{background:#0d1117;border-radius:10px;padding:14px;margin-top:10px}
+.parlayProbBar{height:8px;border-radius:4px;background:#1e3a5f;margin:8px 0;overflow:hidden}
+.parlayProbFill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--blue),var(--green));transition:.6s}
+.parlayWinnerTag{display:inline-block;background:#1a3a1a;color:var(--green);border-radius:6px;padding:3px 10px;font-size:.75rem;font-weight:700;margin-top:4px}
+.parlayCombined{background:linear-gradient(135deg,#0d2137,#1a2d4a);border-radius:14px;padding:20px;text-align:center;margin-top:16px;border:1px solid var(--blue)}
+.parlayCombined .bigProb{font-size:3rem;font-weight:900;color:var(--accent);line-height:1}
+.parlayCombined .sublabel{font-size:.8rem;color:var(--muted);margin-top:6px}
+.parlayCornerRow{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+.parlayCornerRow .tag{font-size:.7rem}
 </style>
 </head>
 <body>
@@ -554,6 +574,7 @@ nav button.active{font-weight:700}
   <nav>
     <button class="active" onclick="showPage('matches')">🗓 Partidos</button>
     <button onclick="showPage('glai')">🧠 GLAI IA</button>
+    <button onclick="showPage('parlay')" id="navParlay">🎯 Parlay <span id="parlayNavBadge" style="display:none;background:var(--blue);color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;margin-left:3px">0</span></button>
     <button onclick="showPage('stats')">📊 Estadísticas</button>
     <button id="navAdmin" style="display:none" onclick="showPage('admin')">⚙️ Admin</button>
   </nav>
@@ -723,6 +744,48 @@ nav button.active{font-weight:700}
       <div class="card" id="lgCard" style="display:none">
         <h2>📈 Estadísticas de Liga (GLAI aprendió)</h2>
         <div id="lgContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PÁGINA: PARLAY BUILDER ─────────────────── -->
+  <div id="pageParlay" class="page">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0">🎯 Constructor de Parlay</h2>
+          <div style="font-size:.8rem;color:var(--muted);margin-top:3px">Selecciona partidos de cualquier deporte y analiza las probabilidades combinadas</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="clearParlay()" style="color:var(--red);border-color:var(--red)">🗑 Limpiar</button>
+          <button class="btn btn-sm btn-blue" id="parlayAnalyzeBtn" onclick="runParlayAnalysis()">🧠 Analizar Parlay</button>
+        </div>
+      </div>
+
+      <!-- Partidos seleccionados -->
+      <div id="parlaySelectionList">
+        <div id="parlayEmpty" style="text-align:center;padding:40px 20px;color:var(--muted)">
+          <div style="font-size:2.5rem;margin-bottom:10px">🎯</div>
+          <div style="font-weight:700;margin-bottom:6px">Sin partidos seleccionados</div>
+          <div style="font-size:.85rem">Ve a la sección <strong>Partidos</strong> y pulsa <strong>"+ Parlay"</strong> en los que te interesen</div>
+          <button class="btn btn-blue" style="margin-top:16px" onclick="showPage('matches');document.querySelectorAll('nav button')[0].classList.add('active')">🗓 Ver Partidos</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resultado del análisis -->
+    <div id="parlayResultsSection" style="display:none">
+      <div class="card">
+        <h3 style="margin:0 0 16px">📊 Análisis Individual</h3>
+        <div id="parlayResultsList"></div>
+      </div>
+      <div id="parlayCombinedCard" class="card" style="display:none">
+        <div class="parlayCombined">
+          <div style="font-size:.85rem;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:1px">PROBABILIDAD COMBINADA DEL PARLAY</div>
+          <div class="bigProb" id="parlayCombinedProb">—</div>
+          <div class="sublabel" id="parlayCombinedLabel">Calculando...</div>
+          <div style="margin-top:16px;font-size:.8rem;color:var(--muted)">⚠️ Este análisis es orientativo. Apuesta con responsabilidad.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -1361,12 +1424,18 @@ function matchCard(m, lg) {
     : sport === 'mlb'
     ? `<span class="tag tag-purple" style="font-size:.65rem">⚾ MLB</span>`
     : '';
+  const parlayKey = `${m.homeTeam}||${m.awayTeam}||${sport}`;
+  const isSelected = parlaySelections.some(s => s._key === parlayKey);
+  const parlayBtnLabel = isSelected ? '✓ En Parlay' : '+ Parlay';
   return `
-    <div class="matchCard" onclick="openMatchGlai('${m.homeTeam}','${m.awayTeam}','${lg}','${sport}')">
+    <div class="matchCard" onclick="openMatchGlai('${esc(m.homeTeam)}','${esc(m.awayTeam)}','${lg}','${sport}')">
       <div class="matchHeader">
         <span class="statusPill ${statusClass}">${statusLabel}</span>
         ${sportBadge}
         <span style="font-size:.75rem;color:var(--muted);margin-left:auto">${formatFullDate(m.date)}</span>
+        <button class="addParlayBtn ${isSelected ? 'selected' : ''}"
+          onclick="event.stopPropagation();toggleParlay(${JSON.stringify({homeTeam:m.homeTeam,awayTeam:m.awayTeam,sport,league:lg,date:m.date,_key:parlayKey})})"
+          title="Agregar al parlay">${parlayBtnLabel}</button>
       </div>
       <div class="matchTeams">
         <img src="${m.homeLogo}" onerror="this.src=''" style="width:28px;height:28px;object-fit:contain"/>
@@ -1377,6 +1446,8 @@ function matchCard(m, lg) {
       </div>
     </div>`;
 }
+
+function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 function formatDate(d) {
   if (!d) return '';
@@ -2799,6 +2870,197 @@ document.addEventListener('keydown', e => {
   else if (registerView.style.display !== 'none') doRegister();
 });
 checkSession();
+
+// ════════════════════════════════════════════════════
+// PARLAY BUILDER
+// ════════════════════════════════════════════════════
+let parlaySelections = [];
+
+function toggleParlay(match) {
+  const idx = parlaySelections.findIndex(s => s._key === match._key);
+  if (idx >= 0) {
+    parlaySelections.splice(idx, 1);
+  } else {
+    if (parlaySelections.length >= 10) {
+      alert('Máximo 10 partidos por parlay'); return;
+    }
+    parlaySelections.push(match);
+  }
+  updateParlayBadge();
+  // Re-render lista de partidos para actualizar botones
+  filterMatches();
+}
+
+function updateParlayBadge() {
+  const n = parlaySelections.length;
+  const badge = document.getElementById('parlayNavBadge');
+  if (badge) {
+    badge.textContent = n;
+    badge.style.display = n > 0 ? '' : 'none';
+  }
+  // Render la lista de seleccionados si estamos en la página parlay
+  renderParlaySelections();
+}
+
+function clearParlay() {
+  parlaySelections = [];
+  document.getElementById('parlayResultsSection').style.display = 'none';
+  updateParlayBadge();
+  filterMatches();
+}
+
+function renderParlaySelections() {
+  const el   = document.getElementById('parlaySelectionList');
+  const empty = document.getElementById('parlayEmpty');
+  if (!el) return;
+
+  if (!parlaySelections.length) {
+    el.innerHTML = '';
+    if (empty) el.appendChild(empty);
+    empty && (empty.style.display = '');
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  const sportIcon = { soccer: '⚽', basketball: '🏀', baseball: '⚾', nba: '🏀', mlb: '⚾' };
+  el.innerHTML = parlaySelections.map((m, i) => `
+    <div class="parlayMatchRow">
+      <button class="removeBtn" onclick="removeFromParlay(${i})" title="Quitar">✕</button>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:1.1rem">${sportIcon[m.sport] || '🏟'}</span>
+        <div>
+          <div style="font-weight:700;font-size:.95rem">${m.homeTeam} <span style="color:var(--muted)">vs</span> ${m.awayTeam}</div>
+          <div style="font-size:.72rem;color:var(--muted)">${m.league ? (LEAGUE_NAMES[m.league] || m.league.toUpperCase()) : m.sport.toUpperCase()} · ${formatFullDate(m.date)}</div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  // Botón analizar activo
+  const btn = document.getElementById('parlayAnalyzeBtn');
+  if (btn) btn.disabled = false;
+}
+
+function removeFromParlay(idx) {
+  parlaySelections.splice(idx, 1);
+  updateParlayBadge();
+  filterMatches();
+}
+
+async function runParlayAnalysis() {
+  if (!parlaySelections.length) return;
+  const btn = document.getElementById('parlayAnalyzeBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Analizando...'; }
+
+  try {
+    const payload = {
+      matches: parlaySelections.map(m => ({
+        teamA:  m.homeTeam,
+        teamB:  m.awayTeam,
+        sport:  m.sport,
+        league: m.league || '',
+      }))
+    };
+    const r = await apiFetch('/api/glai/parlay', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload) });
+    const d = await r.json();
+    if (!d.ok) { alert(d.msg || 'Error en análisis'); return; }
+    renderParlayResults(d);
+  } catch(e) {
+    alert('Error de conexión: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🧠 Analizar Parlay'; }
+  }
+}
+
+function renderParlayResults(data) {
+  const section = document.getElementById('parlayResultsSection');
+  const list    = document.getElementById('parlayResultsList');
+  const combined = document.getElementById('parlayCombinedCard');
+  section.style.display = '';
+
+  const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾' };
+
+  list.innerHTML = data.matches.map(m => {
+    const pred = m.prediction || {};
+    const bet  = m.bet || {};
+    const sport = m.sport;
+    const pA   = pred.pctA || pred.pHome || 0;
+    const pB   = pred.pctB || pred.pAway || 0;
+    const pD   = pred.pctDraw || 0;
+    const winner = pA > pB && pA > pD ? m.teamA
+                 : pB > pA && pB > pD ? m.teamB
+                 : 'Empate posible';
+    const winProb = Math.max(pA, pB, pD);
+    const bestBet = bet.best || {};
+
+    // Stats extra según deporte
+    let extraStats = '';
+    if (sport === 'soccer' && m.corners) {
+      const c = m.corners;
+      extraStats = `
+        <div class="parlayCornerRow">
+          <span class="tag tag-blue">🔲 Córners: ~${(c.cornersA||0)+(c.cornersB||0)}</span>
+          <span class="tag tag-orange">🟨 Tarjetas: ~${(c.cardsA||0)+(c.cardsB||0)}</span>
+          <span class="tag tag-purple">xG: ${(m.valA||0).toFixed(1)} – ${(m.valB||0).toFixed(1)}</span>
+          ${pred.btts ? `<span class="tag">Ambos anotan: ${pred.btts}%</span>` : ''}
+          ${pred.over25 !== undefined ? `<span class="tag">+2.5 goles: ${pred.over25}%</span>` : ''}
+        </div>`;
+    } else if (sport === 'nba') {
+      extraStats = `
+        <div class="parlayCornerRow">
+          <span class="tag tag-blue">🏀 PPG: ${(m.valA||0).toFixed(1)} – ${(m.valB||0).toFixed(1)}</span>
+          ${pred.total ? `<span class="tag tag-orange">Total: ~${pred.total} pts</span>` : ''}
+          ${pred.spread ? `<span class="tag">Spread: ${pred.spread > 0 ? '+' : ''}${pred.spread}</span>` : ''}
+          ${pred.ouLine ? `<span class="tag tag-purple">O/U: ${pred.ouLine} pts</span>` : ''}
+        </div>`;
+    } else if (sport === 'mlb') {
+      extraStats = `
+        <div class="parlayCornerRow">
+          <span class="tag tag-blue">⚾ RPG: ${(m.valA||0).toFixed(2)} – ${(m.valB||0).toFixed(2)}</span>
+          ${pred.totalRuns ? `<span class="tag tag-orange">Total carreras: ~${pred.totalRuns}</span>` : ''}
+          ${pred.ouLine ? `<span class="tag tag-purple">O/U: ${pred.ouLine}</span>` : ''}
+          ${pred.f5Home !== undefined ? `<span class="tag">1er inning: ${pred.f5Home}% local</span>` : ''}
+        </div>`;
+    }
+
+    return `
+      <div class="parlayResult" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="font-size:1rem">${sportIcon[sport]||'🏟'}</span>
+          <span style="font-weight:800">${m.teamA} vs ${m.teamB}</span>
+          <span class="parlayWinnerTag">🏆 ${winner}</span>
+        </div>
+        <div style="display:flex;gap:6px;font-size:.78rem;margin-bottom:6px;flex-wrap:wrap">
+          <span style="color:var(--blue);font-weight:700">${m.teamA} ${pA}%</span>
+          ${pD ? `<span style="color:var(--muted)">Empate ${pD}%</span>` : ''}
+          <span style="color:var(--orange);font-weight:700">${m.teamB} ${pB}%</span>
+        </div>
+        <div class="parlayProbBar"><div class="parlayProbFill" style="width:${winProb}%"></div></div>
+        ${extraStats}
+        ${bestBet.bet ? `<div style="margin-top:8px;font-size:.8rem;background:#0d2137;border-radius:6px;padding:8px 10px">
+          <span style="font-weight:700;color:var(--green)">💡 Apuesta sugerida:</span>
+          <span style="color:var(--text)"> ${bestBet.bet}</span>
+          <span style="color:var(--muted)"> · ${bestBet.conf}% confianza</span>
+        </div>` : ''}
+      </div>`;
+  }).join('');
+
+  // Probabilidad combinada
+  if (data.combinedProb !== undefined && data.count > 1) {
+    combined.style.display = '';
+    document.getElementById('parlayCombinedProb').textContent = data.combinedProb + '%';
+    const label = data.combinedProb >= 40 ? '✅ Parlay con buenas posibilidades'
+                : data.combinedProb >= 20 ? '⚠️ Parlay de riesgo moderado'
+                : '🔴 Parlay de alto riesgo';
+    document.getElementById('parlayCombinedLabel').textContent =
+      `${label} · ${data.count} partidos combinados`;
+  } else {
+    combined.style.display = 'none';
+  }
+
+  section.scrollIntoView({ behavior: 'smooth' });
+}
 </script>
 </body>
 </html>
