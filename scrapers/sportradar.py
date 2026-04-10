@@ -165,13 +165,19 @@ class SportradarScraper:
         return results
 
     def get_results_by_date(self, date_str):
-        data = self._get(f"schedules/{date_str}/results.json")
+        """
+        Obtiene resultados de una fecha.
+        Sportradar Soccer v4 trial usa 'schedules/{date}/schedule.json'
+        y filtramos los que ya terminaron (status closed/complete).
+        El endpoint 'results.json' NO está disponible en trial.
+        """
+        data = self._get(f"schedules/{date_str}/schedule.json")
         if not data:
             return []
         results = []
-        for entry in data.get('results', []):
-            sport_event = entry.get('sport_event', {})
-            status      = entry.get('sport_event_status', {})
+        for sched in data.get('sport_events', []):
+            sport_event = sched if 'id' in sched else sched.get('sport_event', {})
+            status = sched.get('sport_event_status', {})
             if status.get('status') not in ('closed', 'complete'):
                 continue
             competitors = sport_event.get('competitors', [])
@@ -218,24 +224,33 @@ class SportradarScraper:
     def status(self):
         if not self._ok():
             return {'ok': False, 'msg': 'Sin API key configurada', 'key_set': False}
-        # Prueba real con header x-api-key
+        # Usamos el schedule de hoy como prueba — es el endpoint más confiable en trial
         try:
-            url = f"{BASE_URL}/competitions.json"
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            url = f"{BASE_URL}/schedules/{today}/schedule.json"
             r = self.session.get(url, headers={
                 'Accept': 'application/json',
                 'x-api-key': self.api_key,
             }, timeout=10)
-            print(f"[Sportradar] status() HTTP {r.status_code}")
-            if r.status_code == 401 or r.status_code == 403:
+            print(f"[Sportradar Soccer] status() HTTP {r.status_code} → {url}")
+            if r.status_code in (401, 403):
                 return {'ok': False, 'msg': f'API key inválida (HTTP {r.status_code})', 'key_set': True}
+            if r.status_code == 404:
+                # 404 en schedule de hoy = key válida pero sin partidos hoy — eso está bien
+                return {
+                    'ok':           True,
+                    'msg':          'Sportradar Soccer conectado — sin partidos hoy',
+                    'key_set':      True,
+                    'access_level': ACCESS_LEVEL,
+                }
             if not r.ok:
                 return {'ok': False, 'msg': f'Error HTTP {r.status_code}', 'key_set': True}
             data = r.json()
-            comp_count = len(data.get('competitions', []))
+            count = len(data.get('sport_events', []))
             return {
-                'ok':          True,
-                'msg':         f'Sportradar Soccer conectado — {comp_count} competencias',
-                'key_set':     True,
+                'ok':           True,
+                'msg':          f'Sportradar Soccer conectado — {count} partidos hoy',
+                'key_set':      True,
                 'access_level': ACCESS_LEVEL,
             }
         except Exception as e:

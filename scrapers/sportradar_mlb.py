@@ -140,8 +140,12 @@ class SportradarMLBScraper:
         return [g for g in games if g['status'] == 'in']
 
     def get_results_by_date(self, year, month, day):
-        """Resultados finales para alimentar a GLAI."""
-        data = self._get(f"games/{year}/{month:02d}/{day:02d}/summary.json")
+        """
+        Resultados finales para alimentar a GLAI.
+        Trial usa schedule.json y filtramos por status closed/complete.
+        El endpoint summary.json puede no estar disponible en trial.
+        """
+        data = self._get(f"games/{year}/{month:02d}/{day:02d}/schedule.json")
         if not data:
             return []
         results = []
@@ -150,7 +154,6 @@ class SportradarMLBScraper:
                 continue
             home = game.get('home', {})
             away = game.get('away', {})
-            # Runs = carreras en béisbol
             hp = home.get('runs', home.get('points'))
             ap = away.get('runs', away.get('points'))
             if hp is None or ap is None:
@@ -160,7 +163,7 @@ class SportradarMLBScraper:
                 'league':    'mlb',
                 'homeTeam':  home.get('name', ''),
                 'awayTeam':  away.get('name', ''),
-                'homeGoals': int(hp),   # en MLB = carreras (runs)
+                'homeGoals': int(hp),
                 'awayGoals': int(ap),
             })
         return results
