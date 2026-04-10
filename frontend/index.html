@@ -404,6 +404,39 @@ nav button.active{font-weight:700}
 </div>
 
 <!-- DISCLAIMER MODAL -->
+<!-- ══ MODAL: ELIMINAR USUARIO ══════════════════════ -->
+<div id="deleteUserModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1500;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--red);border-radius:16px;padding:32px;max-width:400px;width:calc(100% - 32px);position:relative;text-align:center">
+    <div style="font-size:2.5rem;margin-bottom:10px">⚠️</div>
+    <h3 style="margin-bottom:8px;color:var(--red)">Eliminar usuario</h3>
+    <p style="color:var(--muted);font-size:.88rem;margin-bottom:16px">
+      Esta acción es permanente. Para confirmar escribe el nombre del usuario:<br>
+      <strong id="deleteUserName" style="color:var(--text)"></strong>
+    </p>
+    <input id="deleteConfirmInput" placeholder="Escribe el nombre exacto" style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;font-size:.95rem;margin-bottom:12px"/>
+    <div id="deleteUserMsg" style="min-height:18px;margin-bottom:12px;font-size:.85rem"></div>
+    <div style="display:flex;gap:10px">
+      <button onclick="document.getElementById('deleteUserModal').style.display='none'" style="flex:1;padding:11px;background:#333;color:#ccc;border:none;border-radius:8px;cursor:pointer;font-weight:700">Cancelar</button>
+      <button onclick="confirmDeleteUser()" style="flex:1;padding:11px;background:var(--red);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">🗑 Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: RESET CONTRASEÑA (ADMIN) ═════════════ -->
+<div id="resetPwModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1500;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--blue);border-radius:16px;padding:32px;max-width:400px;width:calc(100% - 32px);position:relative">
+    <h3 style="margin-bottom:4px">🔑 Cambiar contraseña</h3>
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:18px">Usuario: <strong id="resetPwUsername" style="color:var(--blue)"></strong></p>
+    <input id="resetPwNew" type="password" placeholder="Nueva contraseña (mín. 6 caracteres)" style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;font-size:.95rem;margin-bottom:10px"/>
+    <input id="resetPwConfirm" type="password" placeholder="Confirmar contraseña" style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;font-size:.95rem;margin-bottom:12px"/>
+    <div id="resetPwMsg" style="min-height:18px;margin-bottom:12px;font-size:.85rem"></div>
+    <div style="display:flex;gap:10px">
+      <button onclick="document.getElementById('resetPwModal').style.display='none'" style="flex:1;padding:11px;background:#333;color:#ccc;border:none;border-radius:8px;cursor:pointer;font-weight:700">Cancelar</button>
+      <button onclick="submitResetPw()" style="flex:1;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div id="disclaimerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;align-items:center;justify-content:center">
   <div style="background:#161b22;border:1px solid #30363d;border-radius:16px;padding:32px;max-width:600px;width:calc(100% - 32px);max-height:85vh;overflow-y:auto;position:relative">
     <button onclick="document.getElementById('disclaimerModal').style.display='none'" style="position:absolute;top:12px;right:14px;background:none;border:none;color:#8b949e;font-size:1.3rem;cursor:pointer">✕</button>
@@ -2511,7 +2544,10 @@ async function loadUsers() {
   const tbody = document.getElementById('userTableBody');
   tbody.innerHTML = (d.users || []).map(u => `
     <tr>
-      <td><strong>${u.username}</strong></td>
+      <td>
+        <strong>${u.username}</strong>
+        ${u.username === currentUser.username ? ' <span style="color:var(--blue);font-size:.7rem">(tú)</span>' : ''}
+      </td>
       <td>
         <select class="roleSelect" onchange="changeRole('${u.username}', this.value)">
           ${['free','premium','admin'].map(role =>
@@ -2521,14 +2557,16 @@ async function loadUsers() {
       </td>
       <td>
         ${u.tokens === -1
-          ? '<span class="tag tag-purple">∞ ilimitado</span>'
-          : `<span>${u.tokens}</span> <input type="number" class="inputInline" id="tok_${u.username}" style="width:70px;margin-left:6px" value="10" min="1"/>
-             <button class="btn btn-sm btn-orange" onclick="grantTokens('${u.username}')" style="margin-left:4px">+</button>`}
+          ? '<span class="tag tag-purple">∞</span>'
+          : `<span style="font-weight:700;color:var(--gold)">${u.tokens}</span>
+             <input type="number" class="inputInline" id="tok_${u.username}" style="width:60px;margin-left:6px" value="10" min="1"/>
+             <button class="btn btn-sm btn-orange" onclick="grantTokens('${u.username}')" style="margin-left:4px;padding:4px 8px">+</button>`}
       </td>
-      <td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm" style="background:#1565c0;color:#fff;padding:5px 10px" onclick="openResetPw('${u.username}')">🔑</button>
         ${u.username !== currentUser.username
-          ? `<button class="btn btn-sm btn-red" onclick="deleteUser('${u.username}')">🗑 Borrar</button>`
-          : '<span style="color:var(--muted)">—</span>'}
+          ? `<button class="btn btn-sm btn-red" style="padding:5px 10px" onclick="deleteUser('${u.username}')">🗑</button>`
+          : '<span style="color:var(--muted);font-size:.8rem">—</span>'}
       </td>
     </tr>`).join('');
 }
@@ -2568,11 +2606,56 @@ async function grantTokens(username) {
 }
 
 async function deleteUser(username) {
-  if (!confirm(`¿Borrar usuario "${username}"?`)) return;
+  // Modal de confirmación segura
+  document.getElementById('deleteUserName').textContent = username;
+  document.getElementById('deleteConfirmInput').value = '';
+  document.getElementById('deleteUserMsg').textContent = '';
+  window._pendingDeleteUser = username;
+  document.getElementById('deleteUserModal').style.display = 'flex';
+}
+
+async function confirmDeleteUser() {
+  const typed = document.getElementById('deleteConfirmInput').value.trim();
+  const username = window._pendingDeleteUser;
+  if (typed !== username) {
+    document.getElementById('deleteUserMsg').innerHTML = '<span style="color:var(--red)">El nombre no coincide</span>';
+    return;
+  }
   const r = await apiFetch(`/api/admin/users/${username}`, { method: 'DELETE' });
   const d = await r.json();
-  showUserMsg(d.ok ? `Usuario "${username}" eliminado` : (d.error || 'Error'), d.ok);
+  document.getElementById('deleteUserModal').style.display = 'none';
+  showUserMsg(d.ok ? `✅ Usuario "${username}" eliminado` : (d.error || 'Error'), d.ok);
   if (d.ok) loadUsers();
+}
+
+function openResetPw(username) {
+  document.getElementById('resetPwUsername').textContent = username;
+  document.getElementById('resetPwNew').value = '';
+  document.getElementById('resetPwConfirm').value = '';
+  document.getElementById('resetPwMsg').textContent = '';
+  window._pendingResetUser = username;
+  document.getElementById('resetPwModal').style.display = 'flex';
+}
+
+async function submitResetPw() {
+  const username = window._pendingResetUser;
+  const pw1 = document.getElementById('resetPwNew').value.trim();
+  const pw2 = document.getElementById('resetPwConfirm').value.trim();
+  const msg = document.getElementById('resetPwMsg');
+  if (!pw1) { msg.innerHTML = '<span style="color:var(--red)">Escribe la nueva contraseña</span>'; return; }
+  if (pw1 !== pw2) { msg.innerHTML = '<span style="color:var(--red)">Las contraseñas no coinciden</span>'; return; }
+  if (pw1.length < 6) { msg.innerHTML = '<span style="color:var(--red)">Mínimo 6 caracteres</span>'; return; }
+  const r = await apiFetch(`/api/admin/users/${username}/password`, {
+    method: 'PATCH',
+    body: JSON.stringify({ password: pw1 }),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    msg.innerHTML = '<span style="color:var(--green)">✅ ' + d.msg + '</span>';
+    setTimeout(() => { document.getElementById('resetPwModal').style.display = 'none'; }, 1500);
+  } else {
+    msg.innerHTML = '<span style="color:var(--red)">❌ ' + (d.error || 'Error') + '</span>';
+  }
 }
 
 function showUserMsg(msg, ok) {
@@ -2616,15 +2699,25 @@ async function submitChangePw() {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
     });
-    const d = await r.json();
+
+    // Sesión expirada — pedir que vuelva a iniciar sesión
+    if (r.status === 401) {
+      msgEl.innerHTML = '<span style="color:var(--orange)">⚠️ Sesión expirada. Cierra sesión y vuelve a entrar.</span>';
+      return;
+    }
+
+    let d;
+    try { d = await r.json(); }
+    catch { msgEl.innerHTML = '<span style="color:var(--red)">❌ Error del servidor. Revisa los logs en Render.</span>'; return; }
+
     if (d.ok) {
-      msgEl.innerHTML = '<span style="color:var(--green)">' + d.msg + '</span>';
+      msgEl.innerHTML = '<span style="color:var(--green)">✅ ' + d.msg + '</span>';
       setTimeout(hideChangePw, 1800);
     } else {
-      msgEl.innerHTML = '<span style="color:var(--red)">❌ ' + (d.error || 'Error') + '</span>';
+      msgEl.innerHTML = '<span style="color:var(--red)">❌ ' + (d.error || 'Error desconocido') + '</span>';
     }
-  } catch {
-    msgEl.innerHTML = '<span style="color:var(--red)">Error de conexión</span>';
+  } catch (e) {
+    msgEl.innerHTML = '<span style="color:var(--red)">❌ Sin conexión con el servidor. Intenta de nuevo.</span>';
   }
 }
 
