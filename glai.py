@@ -728,12 +728,9 @@ class GLAIEngine:
                 used_sources.append('TheSportsDB')
                 self.set_progress(50, f'TheSportsDB: {n2} resultados · Verificando Sportradar...', total_learned)
 
-                # ── SPORTRADAR Soccer/NBA/MLB (si hay SPORTRADAR_API_KEY) ──────
+                # ── SPORTRADAR Soccer ─────────────────────────────────────────
                 try:
                     from scrapers.sportradar import SportradarScraper
-                    from scrapers.sportradar_nba import SportradarNBAScraper
-                    from scrapers.sportradar_mlb import SportradarMLBScraper
-
                     sprt = SportradarScraper(db=self.db)
                     if sprt._ok():
                         self.set_progress(52, 'Sportradar Soccer — escaneando...', total_learned)
@@ -741,24 +738,42 @@ class GLAIEngine:
                         total_learned += ns
                         used_sources.append('Sportradar Soccer')
                         print(f"[GLAI] Sportradar Soccer: {ns} resultados")
+                except Exception as e_sr:
+                    print(f"[GLAI] Sportradar Soccer skipped: {e_sr}")
 
+                # ── SPORTRADAR NBA ────────────────────────────────────────────
+                try:
+                    from scrapers.sportradar_nba import SportradarNBAScraper
                     snba = SportradarNBAScraper(db=self.db)
                     if snba._ok():
-                        self.set_progress(62, 'Sportradar NBA — escaneando...', total_learned)
-                        nn = snba.scan(days_back=days_back, glai=self)
-                        total_learned += nn
-                        used_sources.append('Sportradar NBA')
-                        print(f"[GLAI] Sportradar NBA: {nn} resultados")
+                        nba_st = snba.status()
+                        if nba_st.get('not_subscribed'):
+                            print("[GLAI] Sportradar NBA no suscrito — omitiendo scan")
+                        else:
+                            self.set_progress(62, 'Sportradar NBA — escaneando...', total_learned)
+                            nn = snba.scan(days_back=days_back, glai=self)
+                            total_learned += nn
+                            used_sources.append('Sportradar NBA')
+                            print(f"[GLAI] Sportradar NBA: {nn} resultados")
+                except Exception as e_nba:
+                    print(f"[GLAI] Sportradar NBA skipped: {e_nba}")
 
+                # ── SPORTRADAR MLB ────────────────────────────────────────────
+                try:
+                    from scrapers.sportradar_mlb import SportradarMLBScraper
                     smlb = SportradarMLBScraper(db=self.db)
                     if smlb._ok():
-                        self.set_progress(72, 'Sportradar MLB — escaneando...', total_learned)
-                        nm = smlb.scan(days_back=days_back, glai=self)
-                        total_learned += nm
-                        used_sources.append('Sportradar MLB')
-                        print(f"[GLAI] Sportradar MLB: {nm} resultados")
-                except Exception as e_sr:
-                    print(f"[GLAI] Sportradar skipped: {e_sr}")
+                        mlb_st = smlb.status()
+                        if mlb_st.get('not_subscribed'):
+                            print("[GLAI] Sportradar MLB no suscrito — omitiendo scan")
+                        else:
+                            self.set_progress(72, 'Sportradar MLB — escaneando...', total_learned)
+                            nm = smlb.scan(days_back=days_back, glai=self)
+                            total_learned += nm
+                            used_sources.append('Sportradar MLB')
+                            print(f"[GLAI] Sportradar MLB: {nm} resultados")
+                except Exception as e_mlb:
+                    print(f"[GLAI] Sportradar MLB skipped: {e_mlb}")
 
                 self.set_progress(85, f'Sportradar completo · Finalizando...', total_learned)
 

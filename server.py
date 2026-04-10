@@ -381,23 +381,27 @@ def sportradar_debug():
         today = datetime.utcnow().strftime('%Y-%m-%d')
         hdrs  = {'Accept': 'application/json', 'x-api-key': active_key}
         urls_to_try = [
-            f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/schedule.json",
-            f"https://api.sportradar.com/soccer/production/v4/en/schedules/{today}/schedule.json",
-            f"https://api.sportradar.com/soccer/trial/v4/en/competitions.json",
-            f"https://api.sportradar.com/soccer/trial/v4/en/schedules/live/schedule.json",
-            f"https://api.sportradar.com/soccer-extended/trial/v4/en/competitions.json",
-            f"https://api.sportradar.com/soccer/trial/v4/en/seasons.json",
+            # Soccer — endpoints base
+            ('Soccer competitions',       f"https://api.sportradar.com/soccer/trial/v4/en/competitions.json"),
+            ('Soccer live schedule',      f"https://api.sportradar.com/soccer/trial/v4/en/schedules/live/schedule.json"),
+            # Soccer — endpoints de scan (seasons/summaries)
+            ('Soccer Premier seasons',    f"https://api.sportradar.com/soccer/trial/v4/en/competitions/sr:competition:17/seasons.json"),
+            ('Soccer schedule hoy',       f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/schedule.json"),
+            ('Soccer schedule resultados',f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/results.json"),
+            ('Soccer summaries hoy',      f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/summaries.json"),
+            # NBA
+            ('NBA schedule hoy',          f"https://api.sportradar.com/nba/trial/v8/en/games/{today[:4]}/{today[5:7]}/{today[8:]}/schedule.json"),
+            # MLB
+            ('MLB schedule hoy',          f"https://api.sportradar.com/mlb/trial/v8/en/games/{today[:4]}/{today[5:7]}/{today[8:]}/schedule.json"),
         ]
         import time as _time
-        for url in urls_to_try:
+        for label, url in urls_to_try:
             try:
                 r = req.get(url, headers=hdrs, timeout=8)
-                results.append({'url': url, 'status': r.status_code, 'body': r.text[:120]})
-                if r.status_code == 200:
-                    break  # Encontramos la URL correcta
+                results.append({'label': label, 'url': url, 'status': r.status_code, 'body': r.text[:150]})
             except Exception as ex:
-                results.append({'url': url, 'status': 'error', 'body': str(ex)})
-            _time.sleep(1.1)  # Respetar rate limit
+                results.append({'label': label, 'url': url, 'status': 'error', 'body': str(ex)})
+            _time.sleep(1.2)  # Respetar rate limit
 
     return jsonify({
         'env_key_set':    bool(env_key),
