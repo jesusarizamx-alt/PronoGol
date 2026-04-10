@@ -59,6 +59,11 @@ def calc_auto_xg(team, sport='soccer', default=1.4):
     2. Resultados de ESPN y otras fuentes — peso menor
     Juegos más recientes pesan más (decaimiento exponencial).
     """
+    # Normaliza: el frontend manda 'nba'/'mlb' pero la DB guarda 'basketball'/'baseball'
+    _SPORT_MAP = {'nba': 'basketball', 'mlb': 'baseball', 'soccer': 'soccer',
+                  'basketball': 'basketball', 'baseball': 'baseball'}
+    sport_db = _SPORT_MAP.get(sport, sport)
+
     try:
         results = db.get_team_results(team, limit=15)
         if not results:
@@ -69,7 +74,9 @@ def calc_auto_xg(team, sport='soccer', default=1.4):
         key = team.lower()[:7]
 
         for i, r in enumerate(results):
-            if r.get('sport', 'soccer') != sport:
+            # Acepta tanto el nombre del frontend ('nba') como el de la DB ('basketball')
+            r_sport = r.get('sport', 'soccer')
+            if r_sport != sport_db and r_sport != sport:
                 continue
             hn = r.get('home_team', '')
             an = r.get('away_team', '')
@@ -600,37 +607,68 @@ def glai_analyze():
     try:
         # ── NBA ─────────────────────────────────────────────────────────
         if sport == 'nba':
-            prediction = glai.predict_nba(val_a, val_b)
-            bet        = glai.ai_bet_nba(prediction, team_a, team_b)
+            # Historial real de cada equipo (se usa cuando ya hay datos de Sportradar)
+            hist_a = glai.team_history(team_a, limit=5) if team_a else []
+            hist_b = glai.team_history(team_b, limit=5) if team_b else []
+
+            # Si tenemos historial, recalcula PPG desde resultados reales
+            def _avg_scored(hist, default):
+                scores = [h['myG'] for h in hist if h.get('myG') is not None]
+                return round(sum(scores) / len(scores), 1) if scores else default
+
+            real_ppg_a = _avg_scored(hist_a, val_a)
+            real_ppg_b = _avg_scored(hist_b, val_b)
+
+            prediction = glai.predict_nba(real_ppg_a, real_ppg_b)
+            bet        = glai.ai_bet_nba(prediction, team_a, team_b, hist_a, hist_b)
             try:
                 db.add_log(u['username'], 'analyze', ip=get_client_ip(),
-                           details=f'{team_a} vs {team_b} | nba | PPG:{val_a}-{val_b}')
+                           details=f'{team_a} vs {team_b} | nba | PPG:{real_ppg_a}-{real_ppg_b}')
             except Exception:
-                pass  # No crashear el análisis si el log falla por DB lock
+                pass
             return jsonify({
                 'ok':         True,
                 'sport':      'nba',
                 'tokensLeft': tokens_left,
                 'prediction': prediction,
                 'bet':        bet,
+                'histA':      hist_a,
+                'histB':      hist_b,
+                'ppgA':       real_ppg_a,
+                'ppgB':       real_ppg_b,
                 'total':      glai.total_learned(),
             })
 
         # ── MLB ─────────────────────────────────────────────────────────
         if sport == 'mlb':
-            prediction = glai.predict_mlb(val_a, val_b)
-            bet        = glai.ai_bet_mlb(prediction, team_a, team_b)
+            # Historial real de cada equipo
+            hist_a = glai.team_history(team_a, limit=5) if team_a else []
+            hist_b = glai.team_history(team_b, limit=5) if team_b else []
+
+            def _avg_scored(hist, default):
+                scores = [h['myG'] for h in hist if h.get('myG') is not None]
+                return round(sum(scores) / len(scores), 2) if scores else default
+
+            real_rpg_a = _avg_scored(hist_a, val_a)
+            real_rpg_b = _avg_scored(hist_b, val_b)
+
+            prediction = glai.predict_mlb(real_rpg_a, real_rpg_b)
+            bet        = glai.ai_bet_mlb(prediction, team_a, team_b, hist_a, hist_b)
             try:
                 db.add_log(u['username'], 'analyze', ip=get_client_ip(),
-                           details=f'{team_a} vs {team_b} | mlb | RPG:{val_a}-{val_b}')
+                           details=f'{team_a} vs {team_b} | mlb | RPG:{real_rpg_a}-{real_rpg_b}')
             except Exception:
-                pass  # No crashear el análisis si el log falla por DB lock
+                pass
             return jsonify({
                 'ok':         True,
                 'sport':      'mlb',
                 'tokensLeft': tokens_left,
                 'prediction': prediction,
                 'bet':        bet,
+                'histA':      hist_a,
+                'histB':      hist_b,
+                'rpgA':       real_rpg_a,
+                'rpgB':       real_rpg_b,
                 'total':      glai.total_learned(),
             })
 
