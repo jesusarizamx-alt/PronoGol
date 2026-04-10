@@ -181,6 +181,23 @@ nav button.active{font-weight:700}
 .sportCardVal{font-size:1.9rem;font-weight:900}
 .sportCardLbl{font-size:.72rem;color:var(--muted);margin-top:3px}
 .firstInningBox{background:linear-gradient(135deg,#1a0d2d,#0d1a2d);border:1px solid #9c27b033;border-radius:12px;padding:16px;margin-bottom:14px}
+
+/* ── LIVE ANALYSIS PANEL ─────────────────────────── */
+.liveAnalysisPanel{background:linear-gradient(135deg,#1a0000,#0d1117);border:2px solid var(--red);border-radius:14px;padding:20px;margin-bottom:20px}
+.liveAnalysisHeader{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.liveAnalysisTitle{font-size:1rem;font-weight:900;color:var(--red);letter-spacing:1px;flex:1}
+.liveCountdown{font-size:.75rem;color:var(--muted);background:#0d1117;border-radius:6px;padding:4px 10px}
+.liveProbBar{display:flex;border-radius:8px;overflow:hidden;height:50px;margin-bottom:14px}
+.liveProbSeg{display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:.9rem;font-weight:900;transition:.8s}
+.liveScoreGrid{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.liveScoreBox{flex:1;min-width:120px;background:#0d1117;border-radius:10px;padding:14px;text-align:center}
+.liveScoreBig{font-size:2.2rem;font-weight:900}
+.liveScoreLbl{font-size:.72rem;color:var(--muted);margin-top:2px}
+.liveTopScores{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.liveTopScore{background:#0d1117;border-radius:6px;padding:6px 10px;text-align:center;font-size:.8rem}
+.liveTopScoreVal{font-weight:900}
+.liveTopScorePct{font-size:.65rem;color:var(--muted)}
+.liveMeta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -302,6 +319,9 @@ nav button.active{font-weight:700}
         <div id="tokenWarn" class="alert alert-orange" style="display:none">⚠️ Sin tokens disponibles. Contacta al administrador.</div>
       </div>
     </div>
+
+    <!-- Panel análisis EN VIVO (aparece automático si el partido está en curso) -->
+    <div id="liveAnalysisWrap" style="display:none"></div>
 
     <div id="glaiResults" style="display:none">
       <!-- Banner marcador en vivo -->
@@ -807,6 +827,13 @@ function openMatchGlai(teamA, teamB, league, sport) {
     b.classList.toggle('active', i === 1);
   });
   if (currentUser && currentUser.role !== 'free') runGlai();
+
+  // Auto-arrancar análisis en vivo si el partido está en curso
+  if (anyMatch && matchStatus(anyMatch) === 'live') {
+    startLiveAnalysis(anyMatch);
+  } else {
+    stopLiveAnalysis();
+  }
 }
 
 function setGlaiSport(sport, btn) {
@@ -1235,6 +1262,208 @@ function buildNarrative(tA, tB, pred, bet, hA, hB, lg, h2h) {
   }
   lines.push(`ℹ️ Este análisis es orientativo y no garantiza resultados. Apuesta con responsabilidad.`);
   return lines.join('\n\n');
+}
+
+// ════════════════════════════════════════════════════
+// ANÁLISIS EN VIVO
+// ════════════════════════════════════════════════════
+let liveAnalysisInterval = null;
+let liveCountdownSecs    = 60;
+let liveCountdownTimer   = null;
+
+function startLiveAnalysis(match) {
+  // Limpia intervalos anteriores
+  clearInterval(liveAnalysisInterval);
+  clearInterval(liveCountdownTimer);
+
+  runLiveAnalysis(match);
+
+  // Refresca cada 60s
+  liveAnalysisInterval = setInterval(() => {
+    // Buscar el match actualizado en allMatches
+    const updated = allMatches.find(m =>
+      m.homeTeam === match.homeTeam && m.awayTeam === match.awayTeam
+    ) || match;
+    runLiveAnalysis(updated);
+  }, 60000);
+
+  // Countdown visual
+  liveCountdownSecs = 60;
+  liveCountdownTimer = setInterval(() => {
+    liveCountdownSecs--;
+    const el = document.getElementById('liveCountdownEl');
+    if (el) el.textContent = `Actualiza en ${liveCountdownSecs}s`;
+    if (liveCountdownSecs <= 0) liveCountdownSecs = 60;
+  }, 1000);
+}
+
+function stopLiveAnalysis() {
+  clearInterval(liveAnalysisInterval);
+  clearInterval(liveCountdownTimer);
+  document.getElementById('liveAnalysisWrap').style.display = 'none';
+}
+
+async function runLiveAnalysis(match) {
+  const wrap = document.getElementById('liveAnalysisWrap');
+  wrap.style.display = '';
+  wrap.innerHTML = `<div class="liveAnalysisPanel">
+    <div class="liveAnalysisHeader">
+      <div class="livePulse"></div>
+      <div class="liveAnalysisTitle">🔴 ANÁLISIS EN VIVO — IA CALCULANDO...</div>
+    </div>
+    <div style="color:var(--muted);font-size:.85rem">⏳ Procesando datos del partido...</div>
+  </div>`;
+
+  const sport     = match.sport || 'soccer';
+  const homeScore = parseInt(match.homeScore) || 0;
+  const awayScore = parseInt(match.awayScore) || 0;
+  const period    = match.period || 1;
+
+  // Obtener xG/PPG/RPG de los inputs actuales
+  const xgA = parseFloat(document.getElementById('xgA').value) || (sport === 'nba' ? 115 : sport === 'mlb' ? 4.5 : 1.4);
+  const xgB = parseFloat(document.getElementById('xgB').value) || (sport === 'nba' ? 112 : sport === 'mlb' ? 4.2 : 1.1);
+
+  // Calcular minuto/cuarto/inning
+  let extra = {};
+  if (sport === 'soccer') {
+    // Estimar minuto desde el period y clock
+    const clock = match.clock || '';
+    let minute = 45;
+    if (period === 1) minute = parseInt(clock) || 20;
+    else if (period === 2) minute = 45 + (parseInt(clock) || 20);
+    extra = { minute };
+  } else if (sport === 'nba') {
+    extra = { period: period || 1 };
+  } else if (sport === 'mlb') {
+    const detail = (match.detail || match.clock || '').toLowerCase();
+    const half = detail.includes('bot') ? 'bottom' : 'top';
+    extra = { inning: period || 1, half };
+  }
+
+  try {
+    const r = await apiFetch('/api/glai/live', {
+      method: 'POST',
+      body: JSON.stringify({
+        teamA: match.homeTeam, teamB: match.awayTeam,
+        sport, homeScore, awayScore, xgA, xgB, ...extra
+      }),
+    });
+    const d = await r.json();
+    if (d.ok) renderLiveAnalysis(d, match);
+    else wrap.innerHTML = `<div class="alert alert-red">❌ ${d.error || 'Error en análisis en vivo'}</div>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="alert alert-red">❌ Error de conexión</div>`;
+  }
+}
+
+function renderLiveAnalysis(d, match) {
+  const wrap  = document.getElementById('liveAnalysisWrap');
+  const pred  = d.prediction || {};
+  const sport = d.sport || 'soccer';
+  const pA    = pred.pctA || 0;
+  const pD    = pred.pctD || 0;
+  const pB    = pred.pctB || 0;
+  const teamA = d.teamA || match.homeTeam;
+  const teamB = d.teamB || match.awayTeam;
+
+  // Status line
+  let statusLine = '';
+  if (sport === 'soccer') {
+    statusLine = `⏱ Min ${pred.minute || '?'} · ${pred.remaining || '?'} min restantes`;
+  } else if (sport === 'nba') {
+    const qNames = ['', 'Q1', 'Q2', 'Q3', 'Q4', 'OT'];
+    statusLine = `🏀 ${qNames[pred.period] || 'Q?'} · ${pred.quartersLeft} cuartos restantes`;
+  } else if (sport === 'mlb') {
+    const halfLabel = pred.half === 'bottom' ? '▼' : '▲';
+    statusLine = `⚾ ${halfLabel} ${pred.inning}° inning · ${pred.inningsLeft} entradas restantes`;
+  }
+
+  // Top scores HTML
+  const topScores = (pred.topScores || []).slice(0, 5);
+  const scoresHtml = topScores.map((s, i) => `
+    <div class="liveTopScore" style="${i === 0 ? 'border:1px solid var(--green)' : ''}">
+      <div class="liveTopScoreVal" style="color:${i===0?'var(--green)':'var(--text)'}">${s.h}-${s.a}</div>
+      <div class="liveTopScorePct">${(s.p * 100).toFixed(1)}%</div>
+    </div>`).join('');
+
+  // Soccer-only: extra xG info
+  let extraInfo = '';
+  if (sport === 'soccer' && pred.adjXgH !== undefined) {
+    extraInfo = `<span class="tag tag-blue">xG rest. ${teamA}: ${pred.adjXgH}</span>
+                 <span class="tag tag-orange">xG rest. ${teamB}: ${pred.adjXgA}</span>`;
+  } else if (sport === 'nba') {
+    extraInfo = `<span class="tag tag-blue">+${pred.remH} pts esperados ${teamA}</span>
+                 <span class="tag tag-orange">+${pred.remA} pts esperados ${teamB}</span>`;
+  } else if (sport === 'mlb') {
+    extraInfo = `<span class="tag tag-blue">+${pred.expH} carreras esperadas ${teamA}</span>
+                 <span class="tag tag-orange">+${pred.expA} carreras esperadas ${teamB}</span>`;
+  }
+
+  const favColor = pA > pB ? 'var(--blue)' : 'var(--red)';
+  const fav = pA > pB ? teamA : (pB > pA ? teamB : 'EMPATE');
+  const favPct = Math.max(pA, pB, pD);
+
+  wrap.innerHTML = `
+  <div class="liveAnalysisPanel">
+    <div class="liveAnalysisHeader">
+      <div class="livePulse"></div>
+      <div class="liveAnalysisTitle">🔴 ANÁLISIS EN VIVO — GLAI IA</div>
+      <div class="liveCountdown" id="liveCountdownEl">Actualiza en ${liveCountdownSecs}s</div>
+      <button onclick="stopLiveAnalysis()" style="background:#333;border:none;color:#aaa;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem">✕ Cerrar</button>
+    </div>
+
+    <!-- Marcador actual -->
+    <div class="liveScoreGrid">
+      <div class="liveScoreBox">
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">${teamA}</div>
+        <div class="liveScoreBig" style="color:var(--blue)">${d.homeScore}</div>
+        <div class="liveScoreLbl">LOCAL</div>
+      </div>
+      <div class="liveScoreBox" style="background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:.7rem;color:var(--red);font-weight:800;letter-spacing:1px">EN VIVO</div>
+        <div style="font-size:.8rem;color:var(--muted);margin-top:4px">${statusLine}</div>
+      </div>
+      <div class="liveScoreBox">
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">${teamB}</div>
+        <div class="liveScoreBig" style="color:var(--red)">${d.awayScore}</div>
+        <div class="liveScoreLbl">VISITANTE</div>
+      </div>
+    </div>
+
+    <!-- Probabilidades de resultado final -->
+    <div style="font-size:.75rem;color:var(--muted);margin-bottom:6px;font-weight:700;letter-spacing:1px">PROBABILIDAD RESULTADO FINAL</div>
+    <div class="liveProbBar" style="margin-bottom:10px">
+      <div class="liveProbSeg" style="width:${pA}%;background:#1565c0">${pA>8?pA+'%':''}</div>
+      ${sport==='soccer'?`<div class="liveProbSeg" style="width:${pD}%;background:#424242">${pD>8?pD+'%':''}</div>`:''}
+      <div class="liveProbSeg" style="width:${pB}%;background:#b71c1c">${pB>8?pB+'%':''}</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-bottom:12px">
+      <span style="color:var(--blue)">${teamA} ${pA}%</span>
+      ${sport==='soccer'?`<span>Empate ${pD}%</span>`:''}
+      <span style="color:var(--red)">${teamB} ${pB}%</span>
+    </div>
+
+    <!-- Favorito + Marcador proyectado -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="liveScoreBox" style="flex:1">
+        <div style="font-size:.68rem;color:var(--muted)">FAVORITO ACTUAL</div>
+        <div style="font-size:1.2rem;font-weight:900;color:${favColor};margin:4px 0">${fav}</div>
+        <div style="font-size:.8rem;color:var(--muted)">${favPct}% probabilidad</div>
+      </div>
+      <div class="liveScoreBox" style="flex:1">
+        <div style="font-size:.68rem;color:var(--muted)">MARCADOR FINAL PROYECTADO</div>
+        <div style="font-size:1.4rem;font-weight:900;margin:4px 0">${pred.projFinalH} - ${pred.projFinalA}</div>
+        <div style="font-size:.72rem;color:var(--muted)">resultado más probable</div>
+      </div>
+    </div>
+
+    <!-- xG restante / puntos esperados -->
+    <div class="liveMeta">${extraInfo}</div>
+
+    ${topScores.length ? `
+    <div style="font-size:.75rem;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:8px">RESULTADOS FINALES MÁS PROBABLES</div>
+    <div class="liveTopScores">${scoresHtml}</div>` : ''}
+  </div>`;
 }
 
 // ════════════════════════════════════════════════════
