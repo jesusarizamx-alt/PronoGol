@@ -1252,19 +1252,44 @@ const LEAGUE_NAMES = {
 
 function matchStatus(m) {
   const s = (m.status || '').toLowerCase();
-  if (s.includes('progress') || s.includes('live') || s.includes('half')) return 'live';
-  if (s.includes('final') || s.includes('end') || s.includes('finish') || s.includes('ft')) return 'final';
+  // En vivo
+  if (s === 'in' || s.includes('progress') || s.includes('live') || s.includes('half') || s.includes('ht')) return 'live';
+  // Terminado — todos los estados finales posibles de ESPN/Sportradar
+  if (s === 'post' || s === 'final' || s === 'closed' || s === 'complete' ||
+      s.includes('final') || s.includes('finish') || s.includes('ended') ||
+      s.includes('ft') || s.includes('end') || s === 'canceled' || s === 'postponed') return 'final';
+  // Próximo
   return 'pre';
 }
 
 function renderMatches(list) {
   const el = document.getElementById('matchList');
-  if (!list.length) { el.innerHTML = '<div class="alert alert-blue">📭 No hay partidos disponibles ahora.</div>'; return; }
 
-  // Separar en 3 grupos
+  // Separar: EN VIVO y PRÓXIMOS (los terminados se ignoran)
   const live = list.filter(m => matchStatus(m) === 'live');
-  const pre  = list.filter(m => matchStatus(m) === 'pre');
-  const done = list.filter(m => matchStatus(m) === 'final');
+
+  // Próximos: TODOS los partidos del día sin importar liga o deporte
+  const preAll = allMatches.filter(m => matchStatus(m) === 'pre');
+  // Si hay filtro de texto activo, aplicarlo también a próximos
+  const q = (document.getElementById('matchFilter')?.value || '').toLowerCase();
+  const pre = q
+    ? preAll.filter(m =>
+        m.homeTeam.toLowerCase().includes(q) ||
+        m.awayTeam.toLowerCase().includes(q) ||
+        (m.league || '').toLowerCase().includes(q))
+    : preAll;
+
+  // Ordenar próximos por hora (más cercanos primero)
+  pre.sort((a, b) => {
+    const ta = new Date(a.date || 0).getTime();
+    const tb = new Date(b.date || 0).getTime();
+    return ta - tb;
+  });
+
+  if (!live.length && !pre.length) {
+    el.innerHTML = '<div class="alert alert-blue">📭 No hay partidos disponibles ahora.</div>';
+    return;
+  }
 
   let html = '';
 
@@ -1279,36 +1304,32 @@ function renderMatches(list) {
     </div>`;
   }
 
-  // ── PRÓXIMOS ───────────────────────────────────
+  // ── PRÓXIMOS (todos los deportes y ligas) ──────
   if (pre.length) {
-    const byLeague = {};
-    pre.forEach(m => { (byLeague[m.league] = byLeague[m.league] || []).push(m); });
+    // Agrupar por deporte primero, luego por liga
+    const sportIcon = { soccer: '⚽', basketball: '🏀', baseball: '⚾' };
+    const bySport = {};
+    pre.forEach(m => {
+      const sp = m.sport || 'soccer';
+      if (!bySport[sp]) bySport[sp] = {};
+      (bySport[sp][m.league] = bySport[sp][m.league] || []).push(m);
+    });
     html += `<div style="margin-bottom:20px">
-      <div style="font-size:.8rem;font-weight:800;color:var(--green);letter-spacing:1px;margin-bottom:10px">🗓 PRÓXIMOS</div>
-      ${Object.entries(byLeague).map(([lg, ms]) => `
-        <div style="margin-bottom:12px">
-          <div style="font-size:.7rem;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:4px">${LEAGUE_NAMES[lg] || lg.toUpperCase()}</div>
-          ${ms.map(m => matchCard(m, lg)).join('')}
+      <div style="font-size:.8rem;font-weight:800;color:var(--green);letter-spacing:1px;margin-bottom:10px">
+        🗓 PRÓXIMOS HOY — ${pre.length} partido${pre.length !== 1 ? 's' : ''}
+      </div>
+      ${Object.entries(bySport).map(([sp, leagues]) => `
+        <div style="margin-bottom:16px">
+          <div style="font-size:.75rem;font-weight:800;color:var(--accent);letter-spacing:1px;margin-bottom:6px;border-bottom:1px solid #1e3a5f;padding-bottom:4px">
+            ${sportIcon[sp] || '🏟'} ${sp.toUpperCase()}
+          </div>
+          ${Object.entries(leagues).map(([lg, ms]) => `
+            <div style="margin-bottom:10px">
+              <div style="font-size:.68rem;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:4px">${LEAGUE_NAMES[lg] || lg.toUpperCase()}</div>
+              ${ms.map(m => matchCard(m, lg)).join('')}
+            </div>`).join('')}
         </div>`).join('')}
     </div>`;
-  }
-
-  // ── TERMINADOS ─────────────────────────────────
-  if (done.length) {
-    const byLeague = {};
-    done.forEach(m => { (byLeague[m.league] = byLeague[m.league] || []).push(m); });
-    html += `<details style="margin-bottom:10px">
-      <summary style="cursor:pointer;font-size:.8rem;font-weight:800;color:var(--muted);letter-spacing:1px;padding:8px 0;list-style:none">
-        ✔ TERMINADOS (${done.length}) — clic para ver
-      </summary>
-      <div style="margin-top:10px">
-        ${Object.entries(byLeague).map(([lg, ms]) => `
-          <div style="margin-bottom:12px">
-            <div style="font-size:.7rem;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:4px">${LEAGUE_NAMES[lg] || lg.toUpperCase()}</div>
-            ${ms.map(m => matchCard(m, lg)).join('')}
-          </div>`).join('')}
-      </div>
-    </details>`;
   }
 
   el.innerHTML = html;
