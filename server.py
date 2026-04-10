@@ -15,7 +15,9 @@ from users import UserManager
 from glai import GLAIEngine
 from scrapers.espn import ESPNScraper
 from scrapers.thesportsdb import TheSportsDBScraper
-from scrapers.sportradar import SportradarScraper  # ← NUEVO
+from scrapers.sportradar import SportradarScraper         # ← Soccer
+from scrapers.sportradar_nba import SportradarNBAScraper  # ← NBA
+from scrapers.sportradar_mlb import SportradarMLBScraper  # ← MLB
 
 # ── App setup ────────────────────────────────────────────────────
 BASE = Path(__file__).parent
@@ -32,7 +34,9 @@ users = UserManager(db)
 glai  = GLAIEngine(db)
 espn  = ESPNScraper(db.get_all_keys())
 tsdb  = TheSportsDBScraper()
-sprt  = SportradarScraper(db=db)  # ← NUEVO — lee key desde env var o DB
+sprt  = SportradarScraper(db=db)    # Soccer — usa SPORTRADAR_API_KEY (env var Render)
+snba  = SportradarNBAScraper(db=db) # NBA   — usa la misma SPORTRADAR_API_KEY
+smlb  = SportradarMLBScraper(db=db) # MLB   — usa la misma SPORTRADAR_API_KEY
 
 # ── Helper: calcular xG automático (Sportradar DB + historial ponderado) ──
 def calc_auto_xg(team, sport='soccer', default=1.4):
@@ -106,9 +110,11 @@ scheduler.add_job(
 scheduler.start()
 print("[Server] ✅ APScheduler activo — GLAI aprende sola cada 2 horas")
 if sprt._ok():
-    print("[Server] ✅ Sportradar conectado — API key detectada")
+    print("[Server] ✅ Sportradar Soccer conectado — SPORTRADAR_API_KEY detectada")
+    print("[Server] ✅ Sportradar NBA conectado — misma key")
+    print("[Server] ✅ Sportradar MLB conectado — misma key")
 else:
-    print("[Server] ⚠️  Sportradar sin API key — usando solo ESPN")
+    print("[Server] ⚠️  Sportradar sin API key — agrega SPORTRADAR_API_KEY en Render")
 
 # ── Auth helpers ─────────────────────────────────────────────────
 def current_user():
@@ -365,6 +371,90 @@ def sportradar_scan():
     t = threading.Thread(target=_run, daemon=True)
     t.start()
     return jsonify({'ok': True, 'msg': f'Scan Sportradar iniciado ({days} días)'})
+
+# ════════════════════════════════════════════════════════════════
+# RUTAS — SPORTRADAR NBA
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/nba/sportradar/status')
+@require_admin
+def nba_sr_status():
+    return jsonify(snba.status())
+
+@app.route('/api/nba/sportradar/live')
+@require_login
+def nba_sr_live():
+    if not snba._ok():
+        return jsonify({'error': 'NBA Sportradar no configurado', 'matches': []}), 503
+    try:
+        matches = snba.get_live_matches()
+        return jsonify({'matches': matches, 'total': len(matches), 'source': 'sportradar_nba'})
+    except Exception as e:
+        return jsonify({'error': str(e), 'matches': []}), 500
+
+@app.route('/api/nba/sportradar/today')
+@require_login
+def nba_sr_today():
+    if not snba._ok():
+        return jsonify({'error': 'NBA Sportradar no configurado', 'matches': []}), 503
+    try:
+        matches = snba.get_today_schedule()
+        return jsonify({'matches': matches, 'total': len(matches), 'source': 'sportradar_nba'})
+    except Exception as e:
+        return jsonify({'error': str(e), 'matches': []}), 500
+
+@app.route('/api/nba/sportradar/scan', methods=['POST'])
+@require_admin
+def nba_sr_scan():
+    if not snba._ok():
+        return jsonify({'ok': False, 'msg': 'NBA Sportradar no configurado'}), 503
+    data = request.get_json() or {}
+    days = int(data.get('days', 7))
+    def _run():
+        snba.scan(days_back=days, glai=glai)
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'ok': True, 'msg': f'Scan NBA iniciado ({days} días)'})
+
+# ════════════════════════════════════════════════════════════════
+# RUTAS — SPORTRADAR MLB
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/mlb/sportradar/status')
+@require_admin
+def mlb_sr_status():
+    return jsonify(smlb.status())
+
+@app.route('/api/mlb/sportradar/live')
+@require_login
+def mlb_sr_live():
+    if not smlb._ok():
+        return jsonify({'error': 'MLB Sportradar no configurado', 'matches': []}), 503
+    try:
+        matches = smlb.get_live_matches()
+        return jsonify({'matches': matches, 'total': len(matches), 'source': 'sportradar_mlb'})
+    except Exception as e:
+        return jsonify({'error': str(e), 'matches': []}), 500
+
+@app.route('/api/mlb/sportradar/today')
+@require_login
+def mlb_sr_today():
+    if not smlb._ok():
+        return jsonify({'error': 'MLB Sportradar no configurado', 'matches': []}), 503
+    try:
+        matches = smlb.get_today_schedule()
+        return jsonify({'matches': matches, 'total': len(matches), 'source': 'sportradar_mlb'})
+    except Exception as e:
+        return jsonify({'error': str(e), 'matches': []}), 500
+
+@app.route('/api/mlb/sportradar/scan', methods=['POST'])
+@require_admin
+def mlb_sr_scan():
+    if not smlb._ok():
+        return jsonify({'ok': False, 'msg': 'MLB Sportradar no configurado'}), 503
+    data = request.get_json() or {}
+    days = int(data.get('days', 7))
+    def _run():
+        smlb.scan(days_back=days, glai=glai)
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'ok': True, 'msg': f'Scan MLB iniciado ({days} días)'})
 
 # ════════════════════════════════════════════════════════════════
 # RUTAS — GLAI IA
@@ -766,10 +856,15 @@ def save_key():
     if not name or not value:
         return jsonify({'error': 'Nombre y valor requeridos'}), 400
     db.save_key(name, value)
-    # Si guardaron la key de Sportradar, recargar el scraper
-    if name.lower() in ('sportradar', 'sportradar_api_key'):
+    # Hot-reload scrapers si se guarda la key de Sportradar (actualiza también headers)
+    if 'sportradar' in name.lower():
         sprt.api_key = value
-        print(f"[Server] ✅ Sportradar API key actualizada desde panel admin")
+        sprt._update_session_headers()
+        snba.api_key = value
+        snba._update_session_headers()
+        smlb.api_key = value
+        smlb._update_session_headers()
+        print(f"[Server] ✅ Sportradar key actualizada para Soccer, NBA y MLB")
     return jsonify({'ok': True, 'msg': f'Key "{name}" guardada'})
 
 # ════════════════════════════════════════════════════════════════
