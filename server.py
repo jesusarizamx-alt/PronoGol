@@ -207,10 +207,20 @@ def glai_status():
 @app.route('/api/glai/stats')
 @require_login
 def glai_stats():
+    soccer_stats = glai.get_all_stats('soccer')
+    nba_stats    = glai.get_all_stats('nba')
+    mlb_stats    = glai.get_all_stats('mlb')
     return jsonify({
         'total':      glai.total_learned(),
-        'byLeague':   glai.get_all_stats('soccer'),
-        'lastScan':   db.get_last_scan(),
+        'bySport': {
+            'soccer': sum(v['n'] for v in soccer_stats.values()),
+            'nba':    sum(v['n'] for v in nba_stats.values()),
+            'mlb':    sum(v['n'] for v in mlb_stats.values()),
+        },
+        'byLeague':  soccer_stats,
+        'byLeagueNba': nba_stats,
+        'byLeagueMlb': mlb_stats,
+        'lastScan':  db.get_last_scan(),
     })
 
 @app.route('/api/glai/scan', methods=['POST'])
