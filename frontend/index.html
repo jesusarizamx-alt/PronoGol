@@ -194,6 +194,19 @@ nav button.active{font-weight:700}
 .liveTopScorePct{font-size:.65rem;color:var(--muted)}
 .liveMeta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 
+/* ── API SLOTS ───────────────────────────────────── */
+.apiSlot{background:#0d1117;border:1px solid var(--border);border-radius:10px;padding:14px;transition:.2s}
+.apiSlot:hover{border-color:var(--blue)}
+.apiSlotHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
+.apiSlotName{font-weight:700;font-size:.9rem;display:block}
+.apiSlotUrl{font-size:.72rem;color:var(--muted);display:block;margin-top:2px}
+.apiSlotRow{display:flex;gap:8px;flex-wrap:wrap}
+.apiSlotInput{flex:1;min-width:180px;background:#161b22;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:.85rem;font-family:monospace}
+.apiSlotInput:focus{outline:none;border-color:var(--blue)}
+.apiSlotStatus{font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+.slotActive{background:#1b5e201a;border:1px solid #4caf50;color:#4caf50}
+.slotEmpty{background:#1a1a1a;border:1px solid #444;color:#666}
+
 /* ── LANDING ─────────────────────────────────────── */
 #landingWrap{display:block;background:var(--bg);min-height:100vh}
 .landingHero{
@@ -800,13 +813,111 @@ nav button.active{font-weight:700}
     <!-- API Keys -->
     <div class="card">
       <h2>🔑 API Keys</h2>
-      <div id="keysList" style="margin-bottom:14px"></div>
-      <div class="flex" style="gap:8px;flex-wrap:wrap">
-        <input id="keyName" placeholder="Nombre (ej: besoccer)" class="inputInline" style="width:160px"/>
-        <input id="keyVal" placeholder="Token / API Key" class="inputInline" style="flex:1;min-width:200px"/>
-        <button class="btn btn-sm btn-blue" onclick="saveKey()">💾 Guardar</button>
+      <p style="color:var(--muted);font-size:.82rem;margin-bottom:16px">
+        Pega tu key y presiona 💾. Las keys se guardan en el disco persistente y sobreviven todos los deploys.
+      </p>
+
+      <!-- 5 slots predefinidos -->
+      <div id="apiSlots" style="display:grid;gap:10px;margin-bottom:20px">
+
+        <!-- Slot 1: football-data.org -->
+        <div class="apiSlot" data-key="footballdata">
+          <div class="apiSlotHeader">
+            <div>
+              <span class="apiSlotName">⚽ football-data.org</span>
+              <span class="apiSlotUrl">football-data.org</span>
+            </div>
+            <span class="apiSlotStatus" id="status_footballdata">—</span>
+          </div>
+          <div class="apiSlotRow">
+            <input class="apiSlotInput" id="val_footballdata" type="password" placeholder="Pega tu API Key aquí"/>
+            <button class="btn btn-sm btn-blue" onclick="saveSlotKey('footballdata')">💾 Guardar</button>
+            <button class="btn btn-sm" style="background:#333;color:#aaa" onclick="toggleKeyVis('val_footballdata', this)">👁</button>
+          </div>
+        </div>
+
+        <!-- Slot 2: TheSportsDB -->
+        <div class="apiSlot" data-key="thesportsdb">
+          <div class="apiSlotHeader">
+            <div>
+              <span class="apiSlotName">🏅 TheSportsDB</span>
+              <span class="apiSlotUrl">thesportsdb.com</span>
+            </div>
+            <span class="apiSlotStatus" id="status_thesportsdb">—</span>
+          </div>
+          <div class="apiSlotRow">
+            <input class="apiSlotInput" id="val_thesportsdb" type="password" placeholder="Pega tu API Key aquí"/>
+            <button class="btn btn-sm btn-blue" onclick="saveSlotKey('thesportsdb')">💾 Guardar</button>
+            <button class="btn btn-sm" style="background:#333;color:#aaa" onclick="toggleKeyVis('val_thesportsdb', this)">👁</button>
+          </div>
+        </div>
+
+        <!-- Slot 3: SportMonks -->
+        <div class="apiSlot" data-key="sportmonks">
+          <div class="apiSlotHeader">
+            <div>
+              <span class="apiSlotName">🥇 SportMonks</span>
+              <span class="apiSlotUrl">sportmonks.com — xG real + cuotas</span>
+            </div>
+            <span class="apiSlotStatus" id="status_sportmonks">—</span>
+          </div>
+          <div class="apiSlotRow">
+            <input class="apiSlotInput" id="val_sportmonks" type="password" placeholder="Pega tu API Key aquí"/>
+            <button class="btn btn-sm btn-blue" onclick="saveSlotKey('sportmonks')">💾 Guardar</button>
+            <button class="btn btn-sm" style="background:#333;color:#aaa" onclick="toggleKeyVis('val_sportmonks', this)">👁</button>
+          </div>
+        </div>
+
+        <!-- Slot 4: Sportradar -->
+        <div class="apiSlot" data-key="sportradar">
+          <div class="apiSlotHeader">
+            <div>
+              <span class="apiSlotName">🥈 Sportradar</span>
+              <span class="apiSlotUrl">sportradar.com — datos oficiales NBA/MLB/Soccer</span>
+            </div>
+            <span class="apiSlotStatus" id="status_sportradar">—</span>
+          </div>
+          <div class="apiSlotRow">
+            <input class="apiSlotInput" id="val_sportradar" type="password" placeholder="Pega tu API Key aquí"/>
+            <button class="btn btn-sm btn-blue" onclick="saveSlotKey('sportradar')">💾 Guardar</button>
+            <button class="btn btn-sm" style="background:#333;color:#aaa" onclick="toggleKeyVis('val_sportradar', this)">👁</button>
+          </div>
+        </div>
+
+        <!-- Slot 5: The Odds API -->
+        <div class="apiSlot" data-key="oddsapi">
+          <div class="apiSlotHeader">
+            <div>
+              <span class="apiSlotName">📊 The Odds API</span>
+              <span class="apiSlotUrl">the-odds-api.com — cuotas de Bet365, DraftKings, etc.</span>
+            </div>
+            <span class="apiSlotStatus" id="status_oddsapi">—</span>
+          </div>
+          <div class="apiSlotRow">
+            <input class="apiSlotInput" id="val_oddsapi" type="password" placeholder="Pega tu API Key aquí"/>
+            <button class="btn btn-sm btn-blue" onclick="saveSlotKey('oddsapi')">💾 Guardar</button>
+            <button class="btn btn-sm" style="background:#333;color:#aaa" onclick="toggleKeyVis('val_oddsapi', this)">👁</button>
+          </div>
+        </div>
+
+        <!-- Slots extra agregados dinámicamente -->
+        <div id="extraSlots"></div>
+
       </div>
-      <div id="keyMsg" style="margin-top:8px"></div>
+
+      <!-- Agregar API personalizada -->
+      <div style="border-top:1px solid var(--border);padding-top:16px">
+        <div style="font-size:.85rem;font-weight:700;margin-bottom:10px;color:var(--muted)">➕ Agregar otra API</div>
+        <div class="flex" style="gap:8px;flex-wrap:wrap">
+          <input id="keyName" placeholder="Nombre (ej: besoccer)" class="inputInline" style="width:160px"/>
+          <input id="keyVal" placeholder="API Key / Token" class="inputInline" style="flex:1;min-width:200px" type="password"/>
+          <button class="btn btn-sm btn-blue" onclick="saveKey()">💾 Agregar</button>
+        </div>
+        <div id="keyMsg" style="margin-top:8px"></div>
+      </div>
+
+      <!-- Keys personalizadas guardadas -->
+      <div id="keysList" style="margin-top:14px"></div>
     </div>
 
     <!-- Gestión de usuarios -->
@@ -2197,21 +2308,66 @@ async function loadStats() {
       badge.innerHTML = '<span class="tag tag-blue">✅ Autónomo (cada 2h)</span>';
     }
 
-    // Por liga
-    const leagues = stats.byLeague || [];
-    const maxN = Math.max(...leagues.map(l => l.n || 0), 1);
-    document.getElementById('lgStatsList').innerHTML = leagues.length
-      ? leagues.sort((a,b) => (b.n||0)-(a.n||0)).map(l => `
+    // KPIs por deporte
+    const bs = stats.bySport || {};
+    document.getElementById('statSoccer').textContent = (bs.soccer || 0).toLocaleString();
+    document.getElementById('statNba').textContent    = (bs.nba    || 0).toLocaleString();
+    document.getElementById('statMlb').textContent    = (bs.mlb    || 0).toLocaleString();
+
+    // Próximo scan (APScheduler corre cada 1h desde el último)
+    if (stats.lastScan) {
+      const last = new Date(stats.lastScan);
+      const next = new Date(last.getTime() + 60 * 60 * 1000);
+      const now  = new Date();
+      const diff = Math.max(0, next - now);
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      document.getElementById('statNextScan').textContent =
+        diff <= 0 ? 'En cualquier momento...' : `${mins}m ${secs}s`;
+    } else {
+      document.getElementById('statNextScan').textContent = 'Esperando primer scan';
+    }
+
+    // Soccer por liga
+    const soccerLeagues = Object.entries(stats.byLeague || {});
+    const maxN = Math.max(...soccerLeagues.map(([,v]) => v.n || 0), 1);
+    document.getElementById('lgStatsList').innerHTML = soccerLeagues.length
+      ? soccerLeagues.sort(([,a],[,b]) => (b.n||0)-(a.n||0)).map(([id, l]) => `
           <div class="statRow">
-            <span>${LEAGUE_NAMES[l.league_id] || l.league_id}</span>
-            <div style="flex:1;margin:0 12px">
-              <div class="progressWrap" style="height:6px">
+            <span style="font-size:.85rem">${LEAGUE_NAMES[id] || id}</span>
+            <div style="flex:1;margin:0 10px">
+              <div class="progressWrap" style="height:5px">
                 <div class="leagueBar" style="width:${((l.n||0)/maxN*100).toFixed(0)}%"></div>
               </div>
             </div>
-            <span style="color:var(--muted);font-size:.85rem">${l.n} partidos</span>
+            <span style="color:var(--muted);font-size:.8rem;white-space:nowrap">${l.n} partidos · ${((l.homeWinRate||0)*100).toFixed(0)}% L</span>
           </div>`).join('')
-      : '<div style="color:var(--muted);font-size:.85rem;padding:10px 0">Sin datos todavía — espera el primer scan autónomo (cada 2 horas)</div>';
+      : '<div style="color:var(--muted);font-size:.85rem;padding:10px 0">Sin datos aún</div>';
+
+    // NBA + MLB
+    const nbaLeagues = Object.entries(stats.byLeagueNba || {});
+    const mlbLeagues = Object.entries(stats.byLeagueMlb || {});
+    const otherEl = document.getElementById('lgStatsOther');
+    let otherHtml = '';
+    if (nbaLeagues.length) {
+      otherHtml += '<div style="font-weight:700;margin-bottom:8px;color:var(--orange)">🏀 NBA</div>';
+      otherHtml += nbaLeagues.map(([id, l]) => `
+        <div class="statRow">
+          <span style="font-size:.85rem">${id}</span>
+          <span style="color:var(--muted);font-size:.8rem">${l.n} partidos · ${((l.homeWinRate||0)*100).toFixed(0)}% L</span>
+        </div>`).join('');
+    }
+    if (mlbLeagues.length) {
+      otherHtml += '<div style="font-weight:700;margin:12px 0 8px;color:var(--red)">⚾ MLB</div>';
+      otherHtml += mlbLeagues.map(([id, l]) => `
+        <div class="statRow">
+          <span style="font-size:.85rem">${id}</span>
+          <span style="color:var(--muted);font-size:.8rem">${l.n} partidos · ${((l.homeWinRate||0)*100).toFixed(0)}% L</span>
+        </div>`).join('');
+    }
+    if (!otherHtml) otherHtml = '<div style="color:var(--muted);font-size:.85rem;padding:10px 0">Sin datos de NBA/MLB aún</div>';
+    otherEl.innerHTML = otherHtml;
+
   } catch {}
 }
 
@@ -2280,17 +2436,47 @@ async function loadKeys() {
   const r = await apiFetch('/api/keys');
   if (!r.ok) return;
   const d = await r.json();
+  const configured = d.configured || [];
   const keys = d.keys || {};
-  const el = document.getElementById('keysList');
-  if (!Object.keys(keys).length) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:.85rem">No hay keys guardadas aún.</div>';
-    return;
+
+  // Slots predefinidos — marcar cuáles están activos
+  const preSlots = ['footballdata','thesportsdb','sportmonks','sportradar','oddsapi'];
+  preSlots.forEach(name => {
+    const el = document.getElementById('status_' + name);
+    if (!el) return;
+    if (configured.includes(name)) {
+      el.textContent = '✅ Activa';
+      el.className = 'apiSlotStatus slotActive';
+      document.getElementById('val_' + name).placeholder = '••••••••••••••••';
+    } else {
+      el.textContent = 'Sin key';
+      el.className = 'apiSlotStatus slotEmpty';
+    }
+  });
+
+  // Keys personalizadas (las que no son de los 5 slots predefinidos)
+  const customKeys = Object.entries(keys).filter(([k]) => !preSlots.includes(k));
+  const listEl = document.getElementById('keysList');
+  if (customKeys.length) {
+    listEl.innerHTML = '<div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:8px">APIs personalizadas guardadas:</div>' +
+      customKeys.map(([k, v]) => `
+        <div class="statRow" style="background:#0d1117;border-radius:8px;padding:10px 14px;margin-bottom:6px">
+          <span class="tag tag-purple">${k}</span>
+          <code style="color:var(--muted);font-size:.8rem;flex:1;margin:0 10px;overflow:hidden;text-overflow:ellipsis">${v}</code>
+          <span style="font-size:.72rem;color:var(--green);font-weight:700">✅ Activa</span>
+        </div>`).join('');
+  } else {
+    listEl.innerHTML = '';
   }
-  el.innerHTML = Object.entries(keys).map(([k, v]) => `
-    <div class="statRow">
-      <span class="tag tag-purple">${k}</span>
-      <code style="color:var(--muted);font-size:.8rem">${v}</code>
-    </div>`).join('');
+}
+
+async function saveSlotKey(name) {
+  const value = document.getElementById('val_' + name).value.trim();
+  if (!value) { showKeyMsg('Pega la API Key primero', false); return; }
+  const r = await apiFetch('/api/keys', { method: 'POST', body: JSON.stringify({ name, value }) });
+  const d = await r.json();
+  showKeyMsg(d.msg || d.error, d.ok);
+  if (d.ok) { document.getElementById('val_' + name).value = ''; loadKeys(); }
 }
 
 async function saveKey() {
@@ -2301,6 +2487,12 @@ async function saveKey() {
   const d = await r.json();
   showKeyMsg(d.msg || d.error, d.ok);
   if (d.ok) { document.getElementById('keyName').value = ''; document.getElementById('keyVal').value = ''; loadKeys(); }
+}
+
+function toggleKeyVis(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+  else { inp.type = 'password'; btn.textContent = '👁'; }
 }
 
 function showKeyMsg(msg, ok) {
