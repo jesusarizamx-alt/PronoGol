@@ -343,6 +343,58 @@ def match_detail(league, event_id):
 # ════════════════════════════════════════════════════════════════
 # RUTAS — SPORTRADAR (nuevo)
 # ════════════════════════════════════════════════════════════════
+@app.route('/api/sportradar/debug')
+@require_admin
+def sportradar_debug():
+    """Diagnóstico completo — muestra exactamente por qué la API funciona o no."""
+    import os, requests as req
+
+    env_key   = os.environ.get('SPORTRADAR_API_KEY', '')
+    all_keys  = {}
+    try:
+        all_keys = db.get_all_keys()
+    except Exception as e:
+        all_keys = {'error': str(e)}
+
+    db_key    = ''
+    db_key_name = ''
+    for name, val in (all_keys.items() if isinstance(all_keys, dict) else {}.items()):
+        if 'sportradar' in str(name).lower() and val:
+            db_key = val
+            db_key_name = name
+            break
+
+    active_key = env_key or db_key
+    key_source = 'env var SPORTRADAR_API_KEY' if env_key else (f'DB key "{db_key_name}"' if db_key else 'ninguna')
+
+    # Prueba real HTTP
+    http_status = None
+    http_body   = ''
+    if active_key:
+        try:
+            from datetime import datetime
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            url   = f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/schedule.json"
+            r = req.get(url, headers={'Accept': 'application/json', 'x-api-key': active_key}, timeout=10)
+            http_status = r.status_code
+            http_body   = r.text[:200]
+        except Exception as e:
+            http_body = str(e)
+
+    return jsonify({
+        'env_key_set':    bool(env_key),
+        'env_key_prefix': env_key[:6] + '...' if env_key else '',
+        'db_key_set':     bool(db_key),
+        'db_key_name':    db_key_name,
+        'db_key_prefix':  db_key[:6] + '...' if db_key else '',
+        'key_source':     key_source,
+        'active_key_set': bool(active_key),
+        'http_status':    http_status,
+        'http_body':      http_body,
+        'scraper_ok':     sprt._ok(),
+        'all_db_keys':    list(all_keys.keys()) if isinstance(all_keys, dict) else [],
+    })
+
 @app.route('/api/sportradar/status')
 @require_admin
 def sportradar_status():
