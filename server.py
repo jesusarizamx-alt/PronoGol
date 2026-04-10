@@ -456,6 +456,117 @@ def sportradar_scan():
     return jsonify({'ok': True, 'msg': f'Scan Sportradar iniciado ({days} días)'})
 
 # ════════════════════════════════════════════════════════════════
+# RUTA — PARLAY / ANÁLISIS MÚLTIPLE
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/glai/parlay', methods=['POST'])
+@require_login
+def glai_parlay():
+    """
+    Analiza hasta 10 partidos juntos para armar un parlay personalizado.
+    Body: { matches: [{teamA, teamB, sport, league}, ...] }
+    Respuesta: { ok, matches: [...análisis individual...], combinedProb, count }
+    """
+    u = current_user()
+    # Admin = ilimitado. Todos los demás consumen 1 token por parlay
+    if u.get('role') != 'admin':
+        ok = users.use_token(u['username'])
+        if not ok:
+            return jsonify({'error': 'no_tokens',
+                           'msg': 'Sin tokens disponibles. Contacta al admin.'}), 403
+        session['user'] = users.get_user(u['username'])
+
+    data    = request.get_json() or {}
+    matches = data.get('matches', [])[:10]  # máx 10 partidos
+
+    if not matches:
+        return jsonify({'ok': False, 'msg': 'No se enviaron partidos'}), 400
+
+    results      = []
+    combined_prob = 1.0
+
+    for m in matches:
+        team_a = m.get('teamA', '').strip()
+        team_b = m.get('teamB', '').strip()
+        sport  = m.get('sport', 'soccer').lower()
+        league = m.get('league', '')
+        if not team_a or not team_b:
+            continue
+
+        _SPORT_MAP = {'nba': 'basketball', 'mlb': 'baseball',
+                      'soccer': 'soccer', 'basketball': 'basketball', 'baseball': 'baseball'}
+        _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else 1.4)
+        _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else 1.1)
+        val_a  = calc_auto_xg(team_a, sport, _def_a)
+        val_b  = calc_auto_xg(team_b, sport, _def_b)
+
+        entry = {
+            'teamA': team_a, 'teamB': team_b,
+            'sport': sport,  'league': league,
+            'valA': val_a,   'valB': val_b,
+        }
+
+        try:
+            if sport == 'nba':
+                hist_a = glai.team_history(team_a, limit=5)
+                hist_b = glai.team_history(team_b, limit=5)
+                def _avg(h, d):
+                    s = [x['myG'] for x in h if x.get('myG') is not None]
+                    return round(sum(s)/len(s), 1) if s else d
+                val_a = _avg(hist_a, val_a)
+                val_b = _avg(hist_b, val_b)
+                pred  = glai.predict_nba(val_a, val_b)
+                bet   = glai.ai_bet_nba(pred, team_a, team_b, hist_a, hist_b)
+                entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
+                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
+
+            elif sport == 'mlb':
+                hist_a = glai.team_history(team_a, limit=5)
+                hist_b = glai.team_history(team_b, limit=5)
+                def _avg(h, d):
+                    s = [x['myG'] for x in h if x.get('myG') is not None]
+                    return round(sum(s)/len(s), 2) if s else d
+                val_a = _avg(hist_a, val_a)
+                val_b = _avg(hist_b, val_b)
+                pred  = glai.predict_mlb(val_a, val_b)
+                bet   = glai.ai_bet_mlb(pred, team_a, team_b, hist_a, hist_b)
+                entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
+                best_p = max(pred.get('pHome', 50), pred.get('pAway', 50)) / 100
+
+            else:  # soccer
+                hist_a = glai.team_history(team_a, limit=5)
+                hist_b = glai.team_history(team_b, limit=5)
+                pred    = glai.predict('soccer', league, val_a, val_b)
+                bet     = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b)
+                corners = glai.predict_corners_cards(val_a, val_b, league)
+                entry.update({'prediction': pred, 'bet': bet,
+                               'corners': corners, 'histA': hist_a, 'histB': hist_b})
+                pA = pred.get('pctA', 33)
+                pB = pred.get('pctB', 33)
+                best_p = max(pA, pB) / 100
+
+            combined_prob *= best_p
+
+        except Exception as ex:
+            entry['error'] = str(ex)
+
+        results.append(entry)
+
+    try:
+        db.add_log(u['username'], 'parlay', ip=get_client_ip(),
+                   details=f'{len(results)} partidos analizados')
+    except Exception:
+        pass
+
+    return jsonify({
+        'ok':           True,
+        'matches':      results,
+        'combinedProb': round(combined_prob * 100, 1),
+        'count':        len(results),
+        'tokensLeft':   session['user'].get('tokens', 0) if u.get('role') != 'admin' else -1,
+    })
+
+
+# ════════════════════════════════════════════════════════════════
 # RUTA — STATS POR EQUIPO (PPG / RPG / xG)
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/team/stats')
