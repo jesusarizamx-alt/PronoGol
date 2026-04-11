@@ -1341,14 +1341,23 @@ const LEAGUE_NAMES = {
 };
 
 function matchStatus(m) {
-  const s = (m.status || '').toLowerCase();
+  const s = (m.status || '').toLowerCase().replace(/_/g, ' ');
   // En vivo
   if (s === 'in' || s.includes('progress') || s.includes('live') || s.includes('half') || s.includes('ht')) return 'live';
-  // Terminado — todos los estados finales posibles de ESPN/Sportradar
-  if (s === 'post' || s === 'final' || s === 'closed' || s === 'complete' ||
+  // Terminado — todos los estados finales posibles de ESPN/Sportradar/TheSportsDB
+  if (s === 'post' || s === 'ft' || s === 'closed' ||
       s.includes('final') || s.includes('finish') || s.includes('ended') ||
-      s.includes('ft') || s.includes('end') || s === 'canceled' || s === 'postponed') return 'final';
-  // Próximo
+      s.includes('complete') || s.includes('canceled') || s.includes('postponed') ||
+      s.includes('abandoned') || s === 'full time') return 'final';
+  // Si tiene score y la fecha pasó hace >2h → terminado
+  const hasScore = m.homeScore !== '' && m.homeScore !== null && m.homeScore !== undefined
+                && m.awayScore !== '' && m.awayScore !== null && m.awayScore !== undefined;
+  if (hasScore && m.date) {
+    try {
+      const mTime = new Date(m.date).getTime();
+      if (Date.now() - mTime > 2 * 60 * 60 * 1000) return 'final'; // >2h atrás
+    } catch(e) {}
+  }
   return 'pre';
 }
 
