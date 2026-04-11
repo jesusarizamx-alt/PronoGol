@@ -575,234 +575,532 @@ class GLAIEngine:
         if learned is not None:
             self._scan_progress['learned'] = learned
 
-    # ─── NBA — Predicción ─────────────────────────────────────────
-    def predict_nba(self, home_ppg, away_ppg):
+    # ─── NBA — Predicción v2 ──────────────────────────────────────
+    def predict_nba(self, home_ppg, away_ppg,
+                    home_apg=None, away_apg=None, h2h=None,
+                    confidence_score=0):
         """
-        Predicción NBA — distribución Normal basada en PPG.
-        Incluye proyección por cuartos Q1-Q4.
+        Predicción NBA v2 — distribución Normal con ratings ofensivos/defensivos.
+        home_ppg / away_ppg : puntos anotados por partido (ponderados)
+        home_apg / away_apg : puntos PERMITIDOS por partido (proxy defensa)
+        h2h                 : lista de enfrentamientos directos (opcional)
         """
         HOME_ADV = 3.0
-        SIGMA    = 12.0
+        SIGMA    = 11.5   # desviación estándar NBA actual
 
-        adj_home = home_ppg + HOME_ADV
-        spread   = adj_home - away_ppg
-        z        = spread / (SIGMA * math.sqrt(2))
-        p_home   = 0.5 + 0.5 * math.erf(z)
-        p_away   = 1.0 - p_home
+        # ── Proyección cruzada: ataque vs. defensa rival ──────────────
+        # Si tenemos APG (puntos permitidos), usa la media cruzada
+        if home_apg and away_apg:
+            # Proyección = (ataque propio + defensa rival) / 2
+            cross_home = (home_ppg + away_apg) / 2
+            cross_away = (away_ppg + home_apg) / 2
+        else:
+            cross_home = home_ppg
+            cross_away = away_ppg
 
-        total   = adj_home + away_ppg
-        ou_line = round(total / 5) * 5          # línea redondeada al 5 más cercano
-        ou_over = min(75, max(25, round(50 + (total - ou_line) / (SIGMA * 0.4))))
+        adj_home = cross_home + HOME_ADV
+        adj_away = cross_away
 
-        # Proyecciones por cuarto
-        q_factors = [0.245, 0.250, 0.245, 0.260]
+        # ── Blend H2H si está disponible ─────────────────────────────
+        if h2h and len(h2h) >= 3:
+            h2h_totals = [r['home_goals'] + r['away_goals'] for r in h2h]
+            h2h_avg_pts = sum(h2h_totals) / len(h2h_totals)
+            # Blend 25% del total con H2H
+            h2h_proj_total = (adj_home + adj_away) * 0.75 + h2h_avg_pts * 0.25
+            ratio = h2h_proj_total / (adj_home + adj_away) if (adj_home + adj_away) > 0 else 1
+            adj_home *= ratio
+            adj_away *= ratio
+
+        spread = adj_home - adj_away
+        z      = spread / (SIGMA * math.sqrt(2))
+        p_home = 0.5 + 0.5 * math.erf(z)
+        p_away = 1.0 - p_home
+
+        total   = adj_home + adj_away
+        ou_line = round(total / 2.5) * 2.5        # línea redondeada a 2.5 pts
+        ou_over = min(78, max(22, round(50 + (total - ou_line) / (SIGMA * 0.35))))
+
+        # ── Primera mitad (Half-Time) ─────────────────────────────────
+        ht_home   = round(adj_home * 0.485, 1)
+        ht_away   = round(adj_away * 0.485, 1)
+        ht_total  = round(ht_home + ht_away, 1)
+        ht_ou_ln  = round(ht_total / 2.5) * 2.5
+        ht_ou_ov  = min(75, max(25, round(50 + (ht_total - ht_ou_ln) / (SIGMA * 0.28))))
+
+        # ── Cuartos Q1-Q4 ────────────────────────────────────────────
+        q_factors = [0.247, 0.253, 0.247, 0.253]   # Q4 ligeramente más pesado
         quarters  = []
         for i, qf in enumerate(q_factors):
-            qh    = round(adj_home * qf, 1)
-            qa    = round(away_ppg * qf, 1)
-            qt    = round(qh + qa, 1)
-            q_ou  = round(qt / 2.5) * 2.5
-            q_ov  = min(72, max(28, round(50 + (qt - q_ou) * 8)))
+            qh   = round(adj_home * qf, 1)
+            qa   = round(adj_away * qf, 1)
+            qt   = round(qh + qa, 1)
+            q_ln = round(qt / 2.5) * 2.5
+            q_ov = min(72, max(28, round(50 + (qt - q_ln) * 7)))
             quarters.append({'q': i + 1, 'home': qh, 'away': qa,
-                              'total': qt, 'ouLine': q_ou, 'overPct': q_ov})
+                              'total': qt, 'ouLine': q_ln, 'overPct': q_ov})
 
         return {
-            'pctA':     round(p_home * 100),
-            'pctB':     round(p_away * 100),
-            'projHome': round(adj_home, 1),
-            'projAway': round(away_ppg, 1),
-            'total':    round(total, 1),
-            'spread':   round(spread, 1),
-            'ouLine':   ou_line,
-            'ouOver':   ou_over,
-            'quarters': quarters,
+            'pctA':          round(p_home * 100),
+            'pctB':          round(p_away * 100),
+            'projHome':      round(adj_home, 1),
+            'projAway':      round(adj_away, 1),
+            'rawPpgHome':    round(home_ppg, 1),
+            'rawPpgAway':    round(away_ppg, 1),
+            'apgHome':       round(home_apg, 1) if home_apg else None,
+            'apgAway':       round(away_apg, 1) if away_apg else None,
+            'total':         round(total, 1),
+            'spread':        round(spread, 1),
+            'ouLine':        ou_line,
+            'ouOver':        ou_over,
+            'halfTime':      {'projHome': ht_home, 'projAway': ht_away,
+                              'projTotal': ht_total, 'ouLine': ht_ou_ln, 'ouOver': ht_ou_ov},
+            'quarters':      quarters,
+            'dataQuality':   confidence_score,
+            'hasCrossStats': bool(home_apg and away_apg),
         }
 
-    def ai_bet_nba(self, pred, team_a, team_b, hist_a=None, hist_b=None):
-        """Genera recomendación de apuesta NBA."""
+    def ai_bet_nba(self, pred, team_a, team_b, hist_a=None, hist_b=None, h2h=None):
+        """
+        Recomendación de apuesta NBA v2.
+        Usa historial real ponderado, splits home/away, H2H y tendencia de forma.
+        """
+        hist_a = hist_a or []
+        hist_b = hist_b or []
         pA     = pred.get('pctA', 50)
         pB     = pred.get('pctB', 50)
         spread = pred.get('spread', 0)
         total  = pred.get('total', 220)
         ou_ln  = pred.get('ouLine', 220)
         ou_ov  = pred.get('ouOver', 50)
+        ht     = pred.get('halfTime', {})
         abs_sp = abs(spread)
 
+        # ── Métricas del historial real ──────────────────────────────
+        def wgt_rate(arr, fn, decay=0.82):
+            if not arr: return 0.5
+            tw = tv = 0.0
+            for i, m in enumerate(arr):
+                w = decay ** i; tw += w; tv += w * (1.0 if fn(m) else 0.0)
+            return tv / tw if tw else 0.5
+
+        win_a    = wgt_rate(hist_a, lambda m: m['result'] == 'G')
+        win_b    = wgt_rate(hist_b, lambda m: m['result'] == 'G')
+        home_a   = [m for m in hist_a if m.get('isHome', True)]
+        away_b   = [m for m in hist_b if not m.get('isHome', True)]
+        home_win_a = wgt_rate(home_a, lambda m: m['result'] == 'G') if home_a else win_a
+        away_win_b = wgt_rate(away_b, lambda m: m['result'] == 'G') if away_b else win_b
+
+        # Tendencia: ¿los últimos 3 partidos mejoraron vs. los anteriores?
+        def _trend(arr):
+            if len(arr) < 5: return 0
+            recent = sum(1 for m in arr[:3] if m['result']=='G') / 3
+            older  = sum(1 for m in arr[3:6] if m['result']=='G') / max(len(arr[3:6]),1)
+            return round((recent - older) * 100)
+
+        trend_a = _trend(hist_a)  # positivo = mejorando
+        trend_b = _trend(hist_b)
+
+        # Over/Under tendencia histórica
+        wgt_total_a = self._weighted_avg(hist_a, 'myG') + self._weighted_avg(hist_a, 'oppG')
+        wgt_total_b = self._weighted_avg(hist_b, 'myG') + self._weighted_avg(hist_b, 'oppG')
+        hist_ou_trend = (wgt_total_a + wgt_total_b) / 2
+
+        # H2H
+        h2h_info = {}
+        if h2h and len(h2h) >= 3:
+            h2h_wins_a = sum(
+                1 for r in h2h
+                if (team_a[:6].lower() in r['home_team'].lower() and r['home_goals'] > r['away_goals'])
+                or (team_a[:6].lower() in r['away_team'].lower() and r['away_goals'] > r['home_goals'])
+            )
+            h2h_totals = [r['home_goals'] + r['away_goals'] for r in h2h]
+            h2h_info = {
+                'n': len(h2h), 'winRateA': round(h2h_wins_a / len(h2h) * 100),
+                'avgPts': round(sum(h2h_totals) / len(h2h_totals), 1),
+            }
+
+        # Confianza de datos
+        n_total = len(hist_a) + len(hist_b)
+        conf_score = min(90, round((min(n_total,20)/20)*60 + (10 if h2h_info else 0)
+                                   + (10 if len(hist_a)>=3 and len(hist_b)>=3 else 0)
+                                   + (10 if pred.get('hasCrossStats') else 0)))
+
         bets = []
-        if pA >= 62:
+
+        # ── Moneyline ─────────────────────────────────────────────────
+        if home_win_a >= 0.65 and len(home_a) >= 3:
+            bets.append({'bet': f'{team_a} Gana (Local)', 'conf': min(82, round(home_win_a*100)+4),
+                         'reason': f'{team_a} gana {round(home_win_a*100)}% en casa · spread {spread:+.1f} pts proyectado'})
+        elif pA >= 62:
             bets.append({'bet': f'{team_a} Gana (Moneyline)', 'conf': min(80, pA),
-                         'reason': f'{team_a} tiene {pA}% de prob. · spread proyectado +{abs_sp:.1f} pts'})
+                         'reason': f'{pA}% probabilidad · PPG {pred.get("projHome"):.1f} vs {pred.get("projAway"):.1f}'})
+        if away_win_b >= 0.60 and len(away_b) >= 3:
+            bets.append({'bet': f'{team_b} Gana (Visitante)', 'conf': min(78, round(away_win_b*100)),
+                         'reason': f'{team_b} gana {round(away_win_b*100)}% de visita — fuerte en cancha ajena'})
         elif pB >= 62:
-            bets.append({'bet': f'{team_b} Gana (Moneyline)', 'conf': min(80, pB),
-                         'reason': f'{team_b} tiene {pB}% de prob. como visitante'})
+            bets.append({'bet': f'{team_b} Gana (Moneyline)', 'conf': min(78, pB),
+                         'reason': f'{team_b} {pB}% · visitante en racha con spread {-spread:+.1f} pts'})
 
-        if abs_sp >= 4:
+        # ── Spread ───────────────────────────────────────────────────
+        if abs_sp >= 5:
             fav  = team_a if spread > 0 else team_b
-            conf = min(72, round(50 + abs_sp * 2.5))
+            conf = min(74, round(50 + abs_sp * 2.0))
             bets.append({'bet': f'{fav} -{abs_sp:.1f} (Spread)', 'conf': conf,
-                         'reason': f'Diferencia proyectada {abs_sp:.1f} pts — ventaja significativa'})
+                         'reason': f'Diferencia proyectada {abs_sp:.1f} pts · respaldado por historial cruzado'})
 
-        if ou_ov >= 58:
-            bets.append({'bet': f'Más de {ou_ln} pts (O/U)', 'conf': ou_ov,
-                         'reason': f'Total proyectado {total:.1f} pts · favorece el Over {ou_ln}'})
-        elif ou_ov <= 42:
-            bets.append({'bet': f'Menos de {ou_ln} pts (O/U)', 'conf': 100 - ou_ov,
-                         'reason': f'Total proyectado {total:.1f} pts · partidos de bajo puntaje'})
+        # ── O/U total ────────────────────────────────────────────────
+        if ou_ov >= 60:
+            bets.append({'bet': f'Más de {ou_ln} pts (O/U)', 'conf': min(76, ou_ov),
+                         'reason': f'Total proyectado {total:.1f} pts · promedio ponderado H {wgt_total_a:.0f} / A {wgt_total_b:.0f} pts'})
+        elif ou_ov <= 40:
+            bets.append({'bet': f'Menos de {ou_ln} pts (O/U)', 'conf': min(76, 100-ou_ov),
+                         'reason': f'Total proyectado {total:.1f} pts — defensas sólidas esperadas'})
+
+        # ── Primera mitad ─────────────────────────────────────────────
+        if ht and ht.get('ouOver', 50) >= 62:
+            bets.append({'bet': f'Primera Mitad Over {ht.get("ouLine")} pts', 'conf': min(72, ht['ouOver']),
+                         'reason': f'1ª mitad proyectada {ht.get("projTotal"):.1f} pts — ritmo alto desde el inicio'})
+
+        # ── H2H ──────────────────────────────────────────────────────
+        if h2h_info and h2h_info.get('winRateA', 50) >= 70:
+            bets.append({'bet': f'{team_a} Gana (Domina H2H)', 'conf': min(78, h2h_info['winRateA']),
+                         'reason': f'Gana {h2h_info["winRateA"]}% de los últimos {h2h_info["n"]} enfrentamientos directos'})
+
+        # ── Tendencia de forma ────────────────────────────────────────
+        if trend_a >= 20 and pA >= 55:
+            best_bet = bets[0] if bets else {'bet': f'{team_a} Gana (Moneyline)', 'conf': pA}
+            bets.append({'bet': best_bet['bet'] + ' [🔥 Forma]',
+                         'conf': min(82, best_bet['conf'] + trend_a // 4),
+                         'reason': f'{team_a} mejorando: +{trend_a}% en últimos 3 vs. anteriores'})
 
         if not bets:
-            bets.append({'bet': f'{team_a} Gana (Moneyline)', 'conf': max(pA, 51),
-                         'reason': 'Partido parejo — ventaja local ligera favorece al local'})
+            bets.append({'bet': f'{team_a} Gana (Moneyline)' if pA > pB else f'{team_b} Gana (Moneyline)',
+                         'conf': max(pA, pB, 51),
+                         'reason': f'Total proyectado {total:.1f} pts · ventaja de {abs_sp:.1f} pts para el favorito'})
 
         bets.sort(key=lambda x: x['conf'], reverse=True)
+
         narrative = (
-            f"🏀 GLAI analiza el partido NBA entre {team_a} y {team_b}.\n\n"
-            f"PPG ajustado: {team_a} {pred.get('projHome')} pts · {team_b} {pred.get('projAway')} pts. "
-            f"Total proyectado: {total:.1f} pts.\n\n"
-            f"{team_a} tiene {pA}% de probabilidades de ganar con spread de {spread:.1f} pts.\n\n"
-            f"La apuesta de mayor confianza es: \"{bets[0]['bet']}\" ({bets[0]['conf']}%). "
-            f"{bets[0]['reason']}.\n\n"
-            f"ℹ️ Este análisis es orientativo. Apuesta con responsabilidad."
+            f"🏀 {team_a} (local) vs {team_b} (visita).\n\n"
+            f"Proyección: {pred.get('projHome'):.1f} – {pred.get('projAway'):.1f} pts "
+            f"(Total {total:.1f} · Spread {spread:+.1f}).\n"
+            + (f"Ratings cruzados — {team_a} APG permitidos: {pred.get('apgHome')} · {team_b}: {pred.get('apgAway')}.\n" if pred.get('hasCrossStats') else '')
+            + (f"H2H: {team_a} gana {h2h_info.get('winRateA')}% de {h2h_info.get('n')} encuentros directos.\n" if h2h_info else '')
+            + f"\n{bets[0]['bet']} ({bets[0]['conf']}%) — {bets[0]['reason']}."
+            f"\n\nℹ️ Análisis orientativo. Apuesta con responsabilidad."
         )
         return {
-            'best':      bets[0] if bets else None,
-            'alt':       bets[1] if len(bets) > 1 else None,
-            'narrative': narrative,
+            'best':           bets[0] if bets else None,
+            'alt':            bets[1] if len(bets) > 1 else None,
+            'narrative':      narrative,
+            'confidenceScore': conf_score,
+            'hasRealData':    len(hist_a) >= 2 or len(hist_b) >= 2,
+            'h2h':            h2h_info,
+            'homeWinA':       round(home_win_a * 100),
+            'awayWinB':       round(away_win_b * 100),
+            'trendA':         trend_a,
+            'trendB':         trend_b,
         }
 
-    # ─── MLB — Predicción ─────────────────────────────────────────
-    def predict_mlb(self, home_rpg, away_rpg):
+    # ─── MLB — Predicción v2 ──────────────────────────────────────
+    def predict_mlb(self, home_rpg, away_rpg,
+                    home_rag=None, away_rag=None, h2h=None,
+                    confidence_score=0):
         """
-        Predicción MLB — Poisson sobre carreras por partido.
-        Incluye análisis 1er inning y proyección entrada por entrada.
+        Predicción MLB v2 — Poisson con ratings ofensivos/defensivos.
+        home_rpg / away_rpg : carreras anotadas por partido (ponderadas)
+        home_rag / away_rag : carreras PERMITIDAS por partido (proxy ERA/pitcheo)
         """
-        HOME_ADV = 0.20
-        adj_home = home_rpg + HOME_ADV
+        HOME_ADV = 0.18
         max_r    = 15
 
-        # Probabilidad de victoria (Poisson)
+        # ── Proyección cruzada: ofensiva vs. pitcheo rival ────────────
+        if home_rag and away_rag:
+            cross_home = (home_rpg + away_rag) / 2
+            cross_away = (away_rpg + home_rag) / 2
+        else:
+            cross_home = home_rpg
+            cross_away = away_rpg
+
+        adj_home = max(0.5, cross_home + HOME_ADV)
+        adj_away = max(0.5, cross_away)
+
+        # ── Blend H2H ─────────────────────────────────────────────────
+        h2h_used = {}
+        if h2h and len(h2h) >= 3:
+            h2h_totals = [r['home_goals'] + r['away_goals'] for r in h2h]
+            h2h_avg = sum(h2h_totals) / len(h2h_totals)
+            blend   = 0.20
+            ratio   = ((adj_home + adj_away) * (1 - blend) + h2h_avg * blend) / (adj_home + adj_away)
+            adj_home *= ratio
+            adj_away *= ratio
+            h2h_used = {'n': len(h2h), 'avgRuns': round(h2h_avg, 1)}
+
+        # ── Probabilidades Poisson ────────────────────────────────────
         p_home = p_away = p_tie = 0.0
         for h in range(max_r + 1):
             for a in range(max_r + 1):
-                p = self._poisson(adj_home, h) * self._poisson(away_rpg, a)
+                p = self._poisson(adj_home, h) * self._poisson(adj_away, a)
                 if   h > a: p_home += p
                 elif h < a: p_away += p
                 else:       p_tie  += p
-        # Extra innings: ligera ventaja local
-        p_home += p_tie * 0.52
+
+        p_home += p_tie * 0.52   # extra innings → leve ventaja local
         p_away += p_tie * 0.48
-        tot = p_home + p_away
-        p_home /= tot
-        p_away /= tot
+        tot = p_home + p_away or 1
+        p_home /= tot; p_away /= tot
 
-        total = adj_home + away_rpg
+        total = adj_home + adj_away
 
-        over_4_5 = sum(
-            self._poisson(adj_home, h) * self._poisson(away_rpg, a)
-            for h in range(max_r + 1) for a in range(max_r + 1) if h + a > 4.5
+        def _over(line):
+            return sum(
+                self._poisson(adj_home, h) * self._poisson(adj_away, a)
+                for h in range(max_r+1) for a in range(max_r+1) if h+a > line
+            )
+
+        over_4_5  = _over(4.5)
+        over_6_5  = _over(6.5)
+        over_7_5  = _over(7.5)
+        over_9_5  = _over(9.5)
+
+        # ── Run line (-1.5) ───────────────────────────────────────────
+        p_rl_home = sum(
+            self._poisson(adj_home, h) * self._poisson(adj_away, a)
+            for h in range(max_r+1) for a in range(max_r+1) if h - a >= 2
         )
-        over_7_5 = sum(
-            self._poisson(adj_home, h) * self._poisson(away_rpg, a)
-            for h in range(max_r + 1) for a in range(max_r + 1) if h + a > 7.5
+        p_rl_away = sum(
+            self._poisson(adj_home, h) * self._poisson(adj_away, a)
+            for h in range(max_r+1) for a in range(max_r+1) if a - h >= 2
         )
 
-        # ── 1er Inning ────────────────────────────────────────────
-        F1 = 0.12
-        first_h   = round(adj_home * F1, 2)
-        first_a   = round(away_rpg * F1, 2)
-        first_tot = round(first_h + first_a, 2)
-        p_any     = 1.0 - self._poisson(first_h, 0) * self._poisson(first_a, 0)
+        # ── 1er Inning — NRFI (No Run First Inning) ──────────────────
+        F1        = 0.118
+        first_h   = round(adj_home * F1, 3)
+        first_a   = round(adj_away * F1, 3)
+        first_tot = first_h + first_a
+        p_nrfi    = self._poisson(first_h, 0) * self._poisson(first_a, 0)
+        p_any     = 1.0 - p_nrfi
         p_f_ov05  = 1.0 - self._poisson(first_tot, 0)
 
-        # ── Proyección entrada por entrada ────────────────────────
-        inning_factors = [0.120, 0.105, 0.112, 0.108, 0.115,
-                          0.112, 0.105, 0.110, 0.113]
+        # ── Primeras 5 entradas (F5) ──────────────────────────────────
+        F5_factor  = 0.535   # ~53.5% de las carreras ocurren en los primeros 5
+        f5_home    = round(adj_home * F5_factor, 2)
+        f5_away    = round(adj_away * F5_factor, 2)
+        f5_total   = f5_home + f5_away
+        f5_ou_ln   = round(f5_total / 0.5) * 0.5
+        f5_p_home  = p_home * 0.52 + 0.48 * (f5_home / (f5_home + f5_away) if f5_home + f5_away > 0 else 0.5)
+        over_f5_45 = sum(
+            self._poisson(f5_home, h) * self._poisson(f5_away, a)
+            for h in range(10) for a in range(10) if h+a > 4.5
+        )
+
+        # ── Proyección entrada por entrada ────────────────────────────
+        inning_factors = [0.118, 0.108, 0.112, 0.108, 0.112,
+                          0.108, 0.105, 0.112, 0.117]
         innings = []
         for i, f in enumerate(inning_factors):
             ih  = round(adj_home * f, 2)
-            ia  = round(away_rpg * f, 2)
-            it  = round(ih + ia, 2)
+            ia  = round(adj_away * f, 2)
+            it  = round(ih + ia, 3)
             psc = round((1.0 - self._poisson(it, 0)) * 100)
-            innings.append({'inning': i + 1, 'home': ih, 'away': ia,
-                             'total': it, 'scorePct': psc})
+            innings.append({'inning': i+1, 'home': ih, 'away': ia,
+                            'total': round(it, 2), 'scorePct': psc})
 
-        # ── Matriz de marcadores ──────────────────────────────────
+        # ── Matriz de marcadores ──────────────────────────────────────
         matrix = []
         for h in range(12):
             for a in range(12):
-                p = self._poisson(adj_home, h) * self._poisson(away_rpg, a)
+                p = self._poisson(adj_home, h) * self._poisson(adj_away, a)
                 matrix.append({'h': h, 'a': a, 'p': round(p, 4)})
         matrix.sort(key=lambda x: x['p'], reverse=True)
 
         return {
-            'pctA':     round(p_home * 100),
-            'pctB':     round(p_away * 100),
-            'projHome': round(adj_home, 2),
-            'projAway': round(away_rpg, 2),
-            'total':    round(total, 2),
-            'over4_5':  round(over_4_5 * 100),
-            'over7_5':  round(over_7_5 * 100),
+            'pctA':         round(p_home * 100),
+            'pctB':         round(p_away * 100),
+            'projHome':     round(adj_home, 2),
+            'projAway':     round(adj_away, 2),
+            'rawRpgHome':   round(home_rpg, 2),
+            'rawRpgAway':   round(away_rpg, 2),
+            'ragHome':      round(home_rag, 2) if home_rag else None,
+            'ragAway':      round(away_rag, 2) if away_rag else None,
+            'total':        round(total, 2),
+            'over4_5':      round(over_4_5 * 100),
+            'over6_5':      round(over_6_5 * 100),
+            'over7_5':      round(over_7_5 * 100),
+            'over9_5':      round(over_9_5 * 100),
+            'runLineHome':  round(p_rl_home * 100),
+            'runLineAway':  round(p_rl_away * 100),
             'first': {
-                'projHome':   first_h,
-                'projAway':   first_a,
-                'projTotal':  first_tot,
-                'scoreAny':   round(p_any * 100),
-                'over05':     round(p_f_ov05 * 100),
+                'projHome':  round(first_h, 2),
+                'projAway':  round(first_a, 2),
+                'projTotal': round(first_tot, 2),
+                'scoreAny':  round(p_any * 100),
+                'nrfi':      round(p_nrfi * 100),
+                'over05':    round(p_f_ov05 * 100),
             },
-            'innings': innings,
-            'matrix':  matrix[:10],
+            'f5': {
+                'projHome':  f5_home, 'projAway': f5_away,
+                'projTotal': round(f5_total, 2),
+                'ouLine':    f5_ou_ln, 'over4_5': round(over_f5_45 * 100),
+                'pctA':      round(f5_p_home * 100),
+            },
+            'innings':       innings,
+            'matrix':        matrix[:10],
+            'h2h':           h2h_used,
+            'hasCrossStats': bool(home_rag and away_rag),
+            'dataQuality':   confidence_score,
         }
 
-    def ai_bet_mlb(self, pred, team_a, team_b, hist_a=None, hist_b=None):
-        """Genera recomendación de apuesta MLB."""
-        pA      = pred.get('pctA', 50)
-        pB      = pred.get('pctB', 50)
-        total   = pred.get('total', 8.5)
-        ov45    = pred.get('over4_5', 50)
-        ov75    = pred.get('over7_5', 50)
-        first   = pred.get('first', {})
+    def ai_bet_mlb(self, pred, team_a, team_b, hist_a=None, hist_b=None, h2h=None):
+        """
+        Recomendación de apuesta MLB v2.
+        Usa historial real ponderado, splits home/away, H2H, NRFI y run line.
+        """
+        hist_a = hist_a or []
+        hist_b = hist_b or []
+        pA     = pred.get('pctA', 50)
+        pB     = pred.get('pctB', 50)
+        total  = pred.get('total', 8.5)
+        ov45   = pred.get('over4_5', 50)
+        ov65   = pred.get('over6_5', 50)
+        ov75   = pred.get('over7_5', 50)
+        rl_h   = pred.get('runLineHome', 40)
+        rl_a   = pred.get('runLineAway', 40)
+        first  = pred.get('first', {})
+        f5     = pred.get('f5', {})
+
+        def wgt_rate(arr, fn, decay=0.82):
+            if not arr: return 0.5
+            tw = tv = 0.0
+            for i, m in enumerate(arr):
+                w = decay**i; tw += w; tv += w*(1.0 if fn(m) else 0.0)
+            return tv/tw if tw else 0.5
+
+        win_a      = wgt_rate(hist_a, lambda m: m['result']=='G')
+        win_b      = wgt_rate(hist_b, lambda m: m['result']=='G')
+        home_a     = [m for m in hist_a if m.get('isHome', True)]
+        away_b     = [m for m in hist_b if not m.get('isHome', True)]
+        home_win_a = wgt_rate(home_a, lambda m: m['result']=='G') if home_a else win_a
+        away_win_b = wgt_rate(away_b, lambda m: m['result']=='G') if away_b else win_b
+
+        # Over/Under tendencia histórica
+        wgt_total_a = self._weighted_avg(hist_a,'myG') + self._weighted_avg(hist_a,'oppG')
+        wgt_total_b = self._weighted_avg(hist_b,'myG') + self._weighted_avg(hist_b,'oppG')
+        hist_avg_total = (wgt_total_a + wgt_total_b) / 2 if (hist_a and hist_b) else total
+
+        # Forma reciente (racha)
+        def streak(arr):
+            s = ''
+            for m in arr[:5]:
+                s += ('W' if m['result']=='G' else ('D' if m['result']=='E' else 'L'))
+            return s
+
+        streak_a = streak(hist_a)
+        streak_b = streak(hist_b)
+
+        # H2H
+        h2h_info = {}
+        if h2h and len(h2h) >= 3:
+            wins_a = sum(
+                1 for r in h2h
+                if (team_a[:6].lower() in r['home_team'].lower() and r['home_goals'] > r['away_goals'])
+                or (team_a[:6].lower() in r['away_team'].lower() and r['away_goals'] > r['home_goals'])
+            )
+            runs = [r['home_goals']+r['away_goals'] for r in h2h]
+            h2h_info = {
+                'n': len(h2h), 'winRateA': round(wins_a/len(h2h)*100),
+                'avgRuns': round(sum(runs)/len(runs), 1),
+            }
+
+        n_total    = len(hist_a) + len(hist_b)
+        conf_score = min(90, round((min(n_total,20)/20)*60 + (10 if h2h_info else 0)
+                                   + (10 if len(hist_a)>=3 and len(hist_b)>=3 else 0)
+                                   + (10 if pred.get('hasCrossStats') else 0)))
 
         bets = []
-        if pA >= 58:
-            bets.append({'bet': f'{team_a} Gana (Moneyline)', 'conf': min(75, pA),
-                         'reason': f'{team_a} tiene {pA}% de prob. con ventaja local (+0.20 carreras)'})
+
+        # ── Moneyline ─────────────────────────────────────────────────
+        if home_win_a >= 0.62 and len(home_a) >= 3:
+            bets.append({'bet': f'{team_a} Gana (Local)', 'conf': min(78, round(home_win_a*100)+3),
+                         'reason': f'{team_a} gana {round(home_win_a*100)}% en casa · racha: {streak_a}'})
+        elif pA >= 58:
+            bets.append({'bet': f'{team_a} Gana (Moneyline)', 'conf': min(74, pA),
+                         'reason': f'{pA}% probabilidad · RPG {pred.get("projHome"):.2f} vs {pred.get("projAway"):.2f}'})
+
+        if away_win_b >= 0.58 and len(away_b) >= 3:
+            bets.append({'bet': f'{team_b} Gana (Visitante)', 'conf': min(74, round(away_win_b*100)),
+                         'reason': f'{team_b} gana {round(away_win_b*100)}% de visita · racha: {streak_b}'})
         elif pB >= 58:
-            bets.append({'bet': f'{team_b} Gana (Moneyline)', 'conf': min(75, pB),
-                         'reason': f'{team_b} tiene {pB}% de prob. visitando'})
+            bets.append({'bet': f'{team_b} Gana (Moneyline)', 'conf': min(74, pB),
+                         'reason': f'{team_b} {pB}% — pitcheo sólido como visitante'})
 
-        if ov45 >= 60:
-            bets.append({'bet': 'Más de 4.5 carreras', 'conf': ov45,
-                         'reason': f'{ov45}% de probabilidad · total proyectado {total:.1f} carreras'})
-        elif ov45 <= 42:
-            bets.append({'bet': 'Menos de 4.5 carreras', 'conf': 100 - ov45,
-                         'reason': f'Solo {ov45}% para más de 4.5 — pitcheo dominante esperado'})
+        # ── Run Line ─────────────────────────────────────────────────
+        if rl_h >= 55:
+            bets.append({'bet': f'{team_a} -1.5 (Run Line)', 'conf': min(72, rl_h),
+                         'reason': f'{rl_h}% de ganar por ≥2 carreras · proyección {pred.get("projHome"):.1f} vs {pred.get("projAway"):.1f}'})
+        elif rl_a >= 55:
+            bets.append({'bet': f'{team_b} +1.5 (Run Line)', 'conf': min(72, rl_a),
+                         'reason': f'{rl_a}% de mantenerse a ≤1 carrera de diferencia'})
 
-        if ov75 >= 58:
-            bets.append({'bet': 'Más de 7.5 carreras', 'conf': ov75,
-                         'reason': f'{ov75}% probabilidad · ofensivas productivas proyectadas'})
+        # ── O/U ───────────────────────────────────────────────────────
+        if ov65 >= 62:
+            bets.append({'bet': 'Más de 6.5 carreras', 'conf': min(74, ov65),
+                         'reason': f'{ov65}% Over 6.5 · total ponderado {hist_avg_total:.1f} · proyección {total:.1f}'})
+        elif ov45 <= 40:
+            bets.append({'bet': 'Menos de 4.5 carreras', 'conf': min(74, 100-ov45),
+                         'reason': f'Solo {ov45}% Over 4.5 — pitcheo dominante de ambos lados'})
+        elif ov75 >= 58:
+            bets.append({'bet': 'Más de 7.5 carreras', 'conf': min(72, ov75),
+                         'reason': f'{ov75}% Over 7.5 · ofensivas productivas proyectadas'})
 
-        if first.get('scoreAny', 0) >= 65:
-            bets.append({'bet': '1er Inning — Alguien Anota', 'conf': first.get('scoreAny', 0),
-                         'reason': f'{first.get("scoreAny")}% de que algún equipo anote en 1er inning'})
+        # ── NRFI ─────────────────────────────────────────────────────
+        nrfi = first.get('nrfi', 50)
+        if nrfi >= 60:
+            bets.append({'bet': 'NRFI — Sin Carreras en 1er Inning', 'conf': min(70, nrfi),
+                         'reason': f'{nrfi}% de que el 1er inning termine 0-0 — pitcheo abridor sólido'})
+        elif first.get('scoreAny', 50) >= 68:
+            bets.append({'bet': '1er Inning — Alguien Anota', 'conf': min(70, first.get('scoreAny',50)),
+                         'reason': f'{first.get("scoreAny")}% de anotar en 1er inning — ofensivas activas'})
+
+        # ── F5 (primeras 5 entradas) ──────────────────────────────────
+        if f5.get('over4_5', 50) >= 58:
+            bets.append({'bet': f'F5 Más de {f5.get("ouLine",4.5)} carreras', 'conf': min(70, f5['over4_5']),
+                         'reason': f'{f5["over4_5"]}% Over {f5.get("ouLine")} en primeras 5 entradas'})
+
+        # ── H2H ──────────────────────────────────────────────────────
+        if h2h_info.get('winRateA', 50) >= 70:
+            bets.append({'bet': f'{team_a} Gana (Domina H2H)', 'conf': min(76, h2h_info['winRateA']),
+                         'reason': f'Gana {h2h_info["winRateA"]}% de los últimos {h2h_info["n"]} enfrentamientos directos'})
 
         if not bets:
-            bets.append({'bet': 'Más de 4.5 carreras', 'conf': ov45,
+            bets.append({'bet': 'Más de 4.5 carreras' if ov45 >= 50 else 'Menos de 4.5 carreras',
+                         'conf': max(ov45, 100-ov45, 51),
                          'reason': f'Total proyectado {total:.1f} carreras'})
 
         bets.sort(key=lambda x: x['conf'], reverse=True)
+
         narrative = (
-            f"⚾ GLAI analiza el partido MLB entre {team_a} y {team_b}.\n\n"
-            f"Carreras proyectadas: {team_a} {pred.get('projHome'):.2f} · "
-            f"{team_b} {pred.get('projAway'):.2f} · Total: {total:.2f}.\n\n"
-            f"{team_a} tiene {pA}% de probabilidades de ganar. "
-            f"Over 4.5: {ov45}% · Over 7.5: {ov75}%.\n\n"
-            f"1er Inning — total proyectado {first.get('projTotal','?')} carreras · "
-            f"{first.get('scoreAny',0)}% probabilidad de que alguien anote.\n\n"
-            f"ℹ️ Este análisis es orientativo. Apuesta con responsabilidad."
+            f"⚾ {team_a} (local) vs {team_b} (visita).\n\n"
+            f"Proyección: {pred.get('projHome'):.2f} – {pred.get('projAway'):.2f} carreras (Total {total:.2f}).\n"
+            + (f"Ratings cruzados — ERA proxy {team_a}: {pred.get('ragHome')} · {team_b}: {pred.get('ragAway')} RPG permitidas.\n"
+               if pred.get('hasCrossStats') else '')
+            + (f"H2H: {team_a} gana {h2h_info.get('winRateA')}% · Promedio {h2h_info.get('avgRuns')} carreras/partido.\n"
+               if h2h_info else '')
+            + f"NRFI: {first.get('nrfi',50)}% · Over 6.5: {ov65}% · Run Line local: {rl_h}%\n"
+            + f"\n{bets[0]['bet']} ({bets[0]['conf']}%) — {bets[0]['reason']}."
+            f"\n\nℹ️ Análisis orientativo. Apuesta con responsabilidad."
         )
         return {
-            'best':      bets[0] if bets else None,
-            'alt':       bets[1] if len(bets) > 1 else None,
-            'narrative': narrative,
+            'best':            bets[0] if bets else None,
+            'alt':             bets[1] if len(bets) > 1 else None,
+            'narrative':       narrative,
+            'confidenceScore': conf_score,
+            'hasRealData':     len(hist_a) >= 2 or len(hist_b) >= 2,
+            'h2h':             h2h_info,
+            'homeWinA':        round(home_win_a * 100),
+            'awayWinB':        round(away_win_b * 100),
+            'streakA':         streak_a,
+            'streakB':         streak_b,
         }
 
     # ─── Predicciones EN VIVO ─────────────────────────────────────

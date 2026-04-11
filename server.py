@@ -334,6 +334,36 @@ def matches():
                     })
                     existing.add(key)
 
+        # ── Filtrar partidos terminados ───────────────────────────
+        FINAL_STATUSES = {
+            'status_final', 'final', 'post', 'closed', 'complete',
+            'finished', 'ended', 'ft', 'full-time',
+            'status_full_time', 'status_postponed', 'status_canceled',
+            'canceled', 'postponed', 'abandoned',
+        }
+        from datetime import datetime, timezone
+        now_ts = datetime.now(timezone.utc).timestamp()
+
+        def _is_final(m):
+            s = (m.get('status') or '').lower().replace(' ', '_')
+            if s in FINAL_STATUSES:
+                return True
+            if any(tok in s for tok in ('final', 'finish', 'ended', 'closed', 'complete')):
+                return True
+            # Partido con score real y fecha pasada hace >2h → terminado
+            has_score = (m.get('homeScore') not in ('', None) and
+                         m.get('awayScore') not in ('', None))
+            if has_score:
+                try:
+                    mt = datetime.fromisoformat(m['date'].replace('Z', '+00:00')).timestamp()
+                    if now_ts - mt > 7200:   # más de 2 horas atrás
+                        return True
+                except Exception:
+                    pass
+            return False
+
+        data = [m for m in data if not _is_final(m)]
+
         return jsonify({'matches': data, 'total': len(data)})
     except Exception as e:
         return jsonify({'error': str(e), 'matches': []}), 500
@@ -775,23 +805,48 @@ def glai_analyze():
     try:
         # ── NBA ─────────────────────────────────────────────────────────
         if sport == 'nba':
-            # Historial real de cada equipo (se usa cuando ya hay datos de Sportradar)
-            hist_a = glai.team_history(team_a, limit=5) if team_a else []
-            hist_b = glai.team_history(team_b, limit=5) if team_b else []
+            hist_a = glai.team_history(team_a, limit=10) if team_a else []
+            hist_b = glai.team_history(team_b, limit=10) if team_b else []
+            h2h    = db.get_h2h_results(team_a, team_b, limit=6) if (team_a and team_b) else []
 
-            # Si tenemos historial, recalcula PPG desde resultados reales
-            def _avg_scored(hist, default):
+            # PPG anotados — promedio ponderado con decay
+            def _wgt_scored(hist, default):
                 scores = [h['myG'] for h in hist if h.get('myG') is not None]
-                return round(sum(scores) / len(scores), 1) if scores else default
+                if not scores: return default
+                total_w = total_v = 0.0
+                for i, s in enumerate(scores):
+                    w = 0.82**i; total_w += w; total_v += w * s
+                return round(total_v / total_w, 1) if total_w else default
 
-            real_ppg_a = _avg_scored(hist_a, val_a)
-            real_ppg_b = _avg_scored(hist_b, val_b)
+            # APG permitidos — proxy de defensa (oppG = puntos que dejaron anotar)
+            def _wgt_allowed(hist, default):
+                scores = [h['oppG'] for h in hist if h.get('oppG') is not None]
+                if not scores: return default
+                total_w = total_v = 0.0
+                for i, s in enumerate(scores):
+                    w = 0.82**i; total_w += w; total_v += w * s
+                return round(total_v / total_w, 1) if total_w else default
 
-            prediction = glai.predict_nba(real_ppg_a, real_ppg_b)
-            bet        = glai.ai_bet_nba(prediction, team_a, team_b, hist_a, hist_b)
+            real_ppg_a = _wgt_scored(hist_a, val_a)
+            real_ppg_b = _wgt_scored(hist_b, val_b)
+            real_apg_a = _wgt_allowed(hist_a, None)   # puntos permitidos por A
+            real_apg_b = _wgt_allowed(hist_b, None)   # puntos permitidos por B
+
+            n_data  = len(hist_a) + len(hist_b)
+            conf_sc = min(90, round((min(n_data,20)/20)*60
+                          + (10 if h2h else 0)
+                          + (10 if len(hist_a)>=3 and len(hist_b)>=3 else 0)
+                          + (10 if real_apg_a and real_apg_b else 0)))
+
+            prediction = glai.predict_nba(
+                real_ppg_a, real_ppg_b,
+                home_apg=real_apg_a, away_apg=real_apg_b,
+                h2h=h2h, confidence_score=conf_sc
+            )
+            bet = glai.ai_bet_nba(prediction, team_a, team_b, hist_a, hist_b, h2h=h2h)
             try:
                 db.add_log(u['username'], 'analyze', ip=get_client_ip(),
-                           details=f'{team_a} vs {team_b} | nba | PPG:{real_ppg_a}-{real_ppg_b}')
+                           details=f'{team_a} vs {team_b} | nba | PPG:{real_ppg_a}-{real_ppg_b} APG:{real_apg_a}-{real_apg_b}')
             except Exception:
                 pass
             return jsonify({
@@ -804,27 +859,53 @@ def glai_analyze():
                 'histB':      hist_b,
                 'ppgA':       real_ppg_a,
                 'ppgB':       real_ppg_b,
+                'apgA':       real_apg_a,
+                'apgB':       real_apg_b,
                 'total':      glai.total_learned(),
             })
 
         # ── MLB ─────────────────────────────────────────────────────────
         if sport == 'mlb':
-            # Historial real de cada equipo
-            hist_a = glai.team_history(team_a, limit=5) if team_a else []
-            hist_b = glai.team_history(team_b, limit=5) if team_b else []
+            hist_a = glai.team_history(team_a, limit=10) if team_a else []
+            hist_b = glai.team_history(team_b, limit=10) if team_b else []
+            h2h    = db.get_h2h_results(team_a, team_b, limit=6) if (team_a and team_b) else []
 
-            def _avg_scored(hist, default):
+            def _wgt_scored(hist, default, decimals=2):
                 scores = [h['myG'] for h in hist if h.get('myG') is not None]
-                return round(sum(scores) / len(scores), 2) if scores else default
+                if not scores: return default
+                total_w = total_v = 0.0
+                for i, s in enumerate(scores):
+                    w = 0.82**i; total_w += w; total_v += w * s
+                return round(total_v / total_w, decimals) if total_w else default
 
-            real_rpg_a = _avg_scored(hist_a, val_a)
-            real_rpg_b = _avg_scored(hist_b, val_b)
+            def _wgt_allowed(hist, default):
+                scores = [h['oppG'] for h in hist if h.get('oppG') is not None]
+                if not scores: return default
+                total_w = total_v = 0.0
+                for i, s in enumerate(scores):
+                    w = 0.82**i; total_w += w; total_v += w * s
+                return round(total_v / total_w, 2) if total_w else default
 
-            prediction = glai.predict_mlb(real_rpg_a, real_rpg_b)
-            bet        = glai.ai_bet_mlb(prediction, team_a, team_b, hist_a, hist_b)
+            real_rpg_a = _wgt_scored(hist_a, val_a)
+            real_rpg_b = _wgt_scored(hist_b, val_b)
+            real_rag_a = _wgt_allowed(hist_a, None)   # carreras permitidas por A
+            real_rag_b = _wgt_allowed(hist_b, None)   # carreras permitidas por B
+
+            n_data  = len(hist_a) + len(hist_b)
+            conf_sc = min(90, round((min(n_data,20)/20)*60
+                          + (10 if h2h else 0)
+                          + (10 if len(hist_a)>=3 and len(hist_b)>=3 else 0)
+                          + (10 if real_rag_a and real_rag_b else 0)))
+
+            prediction = glai.predict_mlb(
+                real_rpg_a, real_rpg_b,
+                home_rag=real_rag_a, away_rag=real_rag_b,
+                h2h=h2h, confidence_score=conf_sc
+            )
+            bet = glai.ai_bet_mlb(prediction, team_a, team_b, hist_a, hist_b, h2h=h2h)
             try:
                 db.add_log(u['username'], 'analyze', ip=get_client_ip(),
-                           details=f'{team_a} vs {team_b} | mlb | RPG:{real_rpg_a}-{real_rpg_b}')
+                           details=f'{team_a} vs {team_b} | mlb | RPG:{real_rpg_a}-{real_rpg_b} RAG:{real_rag_a}-{real_rag_b}')
             except Exception:
                 pass
             return jsonify({
@@ -837,6 +918,8 @@ def glai_analyze():
                 'histB':      hist_b,
                 'rpgA':       real_rpg_a,
                 'rpgB':       real_rpg_b,
+                'ragA':       real_rag_a,
+                'ragB':       real_rag_b,
                 'total':      glai.total_learned(),
             })
 
