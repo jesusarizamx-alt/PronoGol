@@ -594,6 +594,7 @@ nav button.active{font-weight:700}
         <button class="sportBtn"        id="sfSoccer" onclick="setSportFilter('soccer',this)">⚽ Soccer</button>
         <button class="sportBtn"        id="sfNba"    onclick="setSportFilter('nba',this)">🏀 NBA</button>
         <button class="sportBtn"        id="sfMlb"    onclick="setSportFilter('mlb',this)">⚾ MLB</button>
+        <button class="sportBtn"        id="sfNhl"    onclick="setSportFilter('nhl',this)">🏒 NHL</button>
       </div>
       <input id="matchFilter" placeholder="🔍 Filtrar equipo o liga..." style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;font-size:.9rem;margin-bottom:12px" oninput="filterMatches()"/>
       <div id="matchList"><div class="alert alert-blue">⏳ Cargando partidos...</div></div>
@@ -626,6 +627,7 @@ nav button.active{font-weight:700}
           <button class="sportBtn active" id="sbSoccer" onclick="setGlaiSport('soccer',this)">⚽ Soccer</button>
           <button class="sportBtn" id="sbNba" onclick="setGlaiSport('nba',this)">🏀 NBA</button>
           <button class="sportBtn" id="sbMlb" onclick="setGlaiSport('mlb',this)">⚾ MLB</button>
+          <button class="sportBtn" id="sbNhl" onclick="setGlaiSport('nhl',this)">🏒 NHL</button>
         </div>
         <div class="inputRow">
           <div class="inputGroup">
@@ -701,6 +703,12 @@ nav button.active{font-weight:700}
         <div id="betContent"></div>
       </div>
 
+      <!-- Factor de Local — solo Soccer -->
+      <div class="card" id="homeFactorCard" style="display:none">
+        <h2>🏠 Factor de Local</h2>
+        <div id="homeFactorContent"></div>
+      </div>
+
       <!-- Esquinas y Tarjetas -->
       <div class="grid2">
         <div class="card" id="cornersCard">
@@ -768,6 +776,7 @@ nav button.active{font-weight:700}
           <option value="soccer">⚽ Soccer</option>
           <option value="basketball">🏀 NBA</option>
           <option value="baseball">⚾ MLB</option>
+          <option value="nhl">🏒 NHL</option>
         </select>
       </div>
 
@@ -845,6 +854,10 @@ nav button.active{font-weight:700}
         <div style="background:#0d1117;border-radius:10px;padding:16px;text-align:center">
           <div style="font-size:1.5rem;font-weight:900;color:#e53935">⚾ <span id="statMlb">—</span></div>
           <div style="font-size:.75rem;color:var(--muted);margin-top:4px">MLB</div>
+        </div>
+        <div style="background:#0d1117;border-radius:10px;padding:16px;text-align:center">
+          <div style="font-size:1.5rem;font-weight:900;color:#29b6f6">🏒 <span id="statNhl">—</span></div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">NHL</div>
         </div>
       </div>
 
@@ -1367,16 +1380,8 @@ function renderMatches(list) {
   // Separar: EN VIVO y PRÓXIMOS (los terminados se ignoran)
   const live = list.filter(m => matchStatus(m) === 'live');
 
-  // Próximos: TODOS los partidos del día sin importar liga o deporte
-  const preAll = allMatches.filter(m => matchStatus(m) === 'pre');
-  // Si hay filtro de texto activo, aplicarlo también a próximos
-  const q = (document.getElementById('matchFilter')?.value || '').toLowerCase();
-  const pre = q
-    ? preAll.filter(m =>
-        m.homeTeam.toLowerCase().includes(q) ||
-        m.awayTeam.toLowerCase().includes(q) ||
-        (m.league || '').toLowerCase().includes(q))
-    : preAll;
+  // Próximos: respetar el filtro de deporte activo (list ya viene filtrada por deporte y texto)
+  const pre = list.filter(m => matchStatus(m) === 'pre');
 
   // Ordenar próximos por hora (más cercanos primero)
   pre.sort((a, b) => {
@@ -1406,7 +1411,7 @@ function renderMatches(list) {
   // ── PRÓXIMOS (todos los deportes y ligas) ──────
   if (pre.length) {
     // Agrupar por deporte primero, luego por liga
-    const sportIcon = { soccer: '⚽', basketball: '🏀', baseball: '⚾' };
+    const sportIcon = { soccer: '⚽', basketball: '🏀', baseball: '⚾', nhl: '🏒', hockey: '🏒' };
     const bySport = {};
     pre.forEach(m => {
       const sp = m.sport || 'soccer';
@@ -1459,6 +1464,8 @@ function matchCard(m, lg) {
     ? `<span class="tag tag-orange" style="font-size:.65rem">🏀 NBA</span>`
     : sport === 'mlb'
     ? `<span class="tag tag-purple" style="font-size:.65rem">⚾ MLB</span>`
+    : sport === 'nhl'
+    ? `<span class="tag tag-blue" style="font-size:.65rem">🏒 NHL</span>`
     : '';
   const parlayKey = `${m.homeTeam}||${m.awayTeam}||${sport}`;
   const isSelected = parlaySelections.some(s => s._key === parlayKey);
@@ -1509,11 +1516,11 @@ async function openMatchGlai(teamA, teamB, league, sport) {
 
   // Set sport selector
   const matchSport = sport || 'soccer';
-  const btnMap = { soccer: 'sbSoccer', nba: 'sbNba', mlb: 'sbMlb' };
+  const btnMap = { soccer: 'sbSoccer', nba: 'sbNba', mlb: 'sbMlb', nhl: 'sbNhl' };
   setGlaiSport(matchSport, document.getElementById(btnMap[matchSport] || 'sbSoccer'));
 
-  // Para NBA y MLB: consultar stats reales de cada equipo desde la DB
-  if (matchSport === 'nba' || matchSport === 'mlb') {
+  // Para NBA, MLB y NHL: consultar stats reales de cada equipo desde la DB
+  if (matchSport === 'nba' || matchSport === 'mlb' || matchSport === 'nhl') {
     try {
       const [resA, resB] = await Promise.all([
         fetch(`/api/team/stats?team=${encodeURIComponent(teamA)}&sport=${matchSport}`).then(r => r.json()),
@@ -1528,7 +1535,7 @@ async function openMatchGlai(teamA, teamB, league, sport) {
       const srcB = resB.source === 'db' ? `📊 ${resB.games} partidos` : '📋 default';
       const lblA = document.getElementById('lblValA');
       const lblB = document.getElementById('lblValB');
-      const metric = matchSport === 'nba' ? 'PPG' : 'RPG';
+      const metric = matchSport === 'nba' ? 'PPG' : matchSport === 'nhl' ? 'GPG' : 'RPG';
       if (lblA) lblA.textContent = `${metric} Local (${srcA})`;
       if (lblB) lblB.textContent = `${metric} Visitante (${srcB})`;
     } catch(e) {
@@ -1588,6 +1595,15 @@ function setGlaiSport(sport, btn) {
     xgA.step = '0.1'; xgB.step = '0.1';
     if (!tA.placeholder.includes('Yankees')) tA.placeholder = 'Ej: New York Yankees';
     if (!tB.placeholder.includes('Dodgers')) tB.placeholder = 'Ej: Los Angeles Dodgers';
+  } else if (sport === 'nhl') {
+    leagueGrp.style.display = 'none';
+    lblA.textContent = 'Goles/Juego (A)';
+    lblB.textContent = 'Goles/Juego (B)';
+    xgA.value = xgA.value > 10 ? '3.1' : xgA.value;
+    xgB.value = xgB.value > 10 ? '2.9' : xgB.value;
+    xgA.step = '0.1'; xgB.step = '0.1';
+    if (!tA.placeholder.includes('Maple')) tA.placeholder = 'Ej: Toronto Maple Leafs';
+    if (!tB.placeholder.includes('Rangers')) tB.placeholder = 'Ej: New York Rangers';
   } else {
     leagueGrp.style.display = '';
     lblA.textContent = 'xG Local (A)';
@@ -1667,6 +1683,7 @@ async function runGlai() {
     const sport = d.sport || currentGlaiSport;
     if (sport === 'nba') renderGlaiNBA(d, teamA, teamB);
     else if (sport === 'mlb') renderGlaiMLB(d, teamA, teamB);
+    else if (sport === 'nhl') renderGlaiNHL(d, teamA, teamB);
     else renderGlai(d, teamA, teamB);
   } catch (e) {
     document.getElementById('tokenWarn').style.display = '';
@@ -1684,6 +1701,7 @@ function renderGlai(d, teamA, teamB) {
   const histA = d.histA || [];
   const histB = d.histB || [];
   const lg   = d.lgStats || pred.lgStats || null;
+  const hs   = d.homeSplit || {};
 
   document.getElementById('glaiResults').style.display = '';
   // Restore soccer-only panels
@@ -1691,6 +1709,7 @@ function renderGlai(d, teamA, teamB) {
   document.getElementById('cardsCard').style.display = '';
   document.getElementById('histCardA').style.display = '';
   document.getElementById('histCardB').style.display = '';
+  document.getElementById('homeFactorCard').style.display = '';
 
   // ── Banner EN VIVO ──────────────────────────────
   const liveM = window._currentLiveMatch;
@@ -1897,6 +1916,9 @@ function renderGlai(d, teamA, teamB) {
   // ── Head-to-Head ────────────────────────────────
   renderH2H(d.h2h || null, teamA, teamB);
 
+  // ── Factor de Local ──────────────────────────────
+  renderHomeFactor(hs, teamA, teamB);
+
   // ── Narrativa ───────────────────────────────────
   document.getElementById('narrative').textContent = buildNarrative(teamA, teamB, pred, bet, histA, histB, lg, d.h2h);
 
@@ -1949,6 +1971,132 @@ function renderHistory(side, hist, teamName, xg) {
     </div>
     <div style="margin-top:8px;font-size:.78rem;color:var(--muted)">
       ${hist.map(h => `${h.isHome ? '🏠' : '✈️'} vs ${h.opp||'?'} — <strong style="color:${h.result==='G'?'#4caf50':h.result==='E'?'#78909c':'#ef5350'}">${h.myG}-${h.oppG}</strong> ${h.comp||''} ${h.date||''}`).join('<br/>')}
+    </div>`;
+}
+
+function renderHomeFactor(hs, teamA, teamB) {
+  const el = document.getElementById('homeFactorContent');
+  if (!el) return;
+
+  const ha  = hs.teamA_home || {};   // team A jugando en casa
+  const ba  = hs.teamB_away || {};   // team B jugando fuera
+
+  // Si no hay suficientes datos, mostrar mensaje
+  if (!ha.n && !ba.n) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:.85rem;text-align:center;padding:12px">
+      ⚠️ Aún no hay suficientes partidos en la base de datos para calcular el factor de local.<br>
+      <small>El sistema aprende automáticamente con cada scan — vuelve a intentarlo más tarde.</small>
+    </p>`;
+    return;
+  }
+
+  // Helper: barra de progreso de color
+  function pBar(pct, color) {
+    return `<div style="background:#1e1e1e;border-radius:4px;height:8px;margin-top:4px;overflow:hidden">
+      <div style="width:${Math.min(100,pct)}%;height:100%;background:${color};border-radius:4px;transition:.4s"></div>
+    </div>`;
+  }
+
+  // Ventaja de local — calificación
+  const homeWinA = hs.homeWinA || 0;
+  const awayWinB = hs.awayWinB || 0;
+  let advantageLabel, advantageColor, advantageDetail;
+  if (homeWinA >= 65) {
+    advantageLabel = '🔥 Fuerte en casa';
+    advantageColor = 'var(--green)';
+    advantageDetail = `${teamA} gana el ${homeWinA}% de sus partidos como LOCAL — fortaleza de casa notable.`;
+  } else if (homeWinA >= 50) {
+    advantageLabel = '✅ Ventaja local moderada';
+    advantageColor = 'var(--blue)';
+    advantageDetail = `${teamA} tiene buen rendimiento en casa (${homeWinA}% victorias).`;
+  } else if (homeWinA > 0) {
+    advantageLabel = '⚠️ Local débil';
+    advantageColor = 'var(--orange)';
+    advantageDetail = `${teamA} solo gana el ${homeWinA}% en casa — la localía no es factor determinante.`;
+  } else {
+    advantageLabel = '📊 Sin datos de local';
+    advantageColor = 'var(--muted)';
+    advantageDetail = 'No hay suficientes partidos como local registrados.';
+  }
+
+  let awayDetail;
+  if (awayWinB >= 50) {
+    awayDetail = `⚡ ${teamB} también es sólido de visita (${awayWinB}% victorias fuera).`;
+  } else if (awayWinB > 0) {
+    awayDetail = `${teamB} gana el ${awayWinB}% de visita — rinde mejor en casa.`;
+  } else {
+    awayDetail = '';
+  }
+
+  el.innerHTML = `
+    <!-- Veredicto general -->
+    <div style="background:linear-gradient(135deg,#0a1628,#0d1117);border:1px solid ${advantageColor}44;
+      border-radius:12px;padding:16px;margin-bottom:14px;display:flex;align-items:center;gap:12px">
+      <div style="font-size:2rem">🏠</div>
+      <div>
+        <div style="font-size:.72rem;font-weight:800;color:var(--muted);letter-spacing:1px;margin-bottom:2px">FACTOR LOCAL</div>
+        <div style="font-weight:900;font-size:1.05rem;color:${advantageColor}">${advantageLabel}</div>
+        <div style="font-size:.82rem;color:var(--text);margin-top:4px">${advantageDetail}</div>
+        ${awayDetail ? `<div style="font-size:.78rem;color:var(--muted);margin-top:3px">${awayDetail}</div>` : ''}
+      </div>
+    </div>
+
+    <!-- Grid de splits -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+
+      <!-- Team A como LOCAL -->
+      <div style="background:#0d1117;border-radius:10px;padding:14px;border-left:3px solid var(--blue)">
+        <div style="font-size:.7rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin-bottom:8px">
+          🏠 ${teamA} — LOCAL
+        </div>
+        ${ha.n ? `
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:.8rem;color:var(--muted)">Partidos</span>
+            <span style="font-weight:700">${ha.n}</span>
+          </div>
+          <div style="font-size:.8rem;color:var(--muted);margin-bottom:3px">% victorias en casa</div>
+          <div style="font-size:1.5rem;font-weight:900;color:${ha.win_pct>=60?'var(--green)':ha.win_pct>=45?'var(--blue)':'var(--orange)'}">${ha.win_pct}%</div>
+          ${pBar(ha.win_pct, ha.win_pct>=60?'var(--green)':ha.win_pct>=45?'var(--blue)':'var(--orange)')}
+          <div style="display:flex;gap:12px;margin-top:10px">
+            <div style="text-align:center">
+              <div style="font-size:1.1rem;font-weight:900;color:var(--blue)">${ha.gf ?? '—'}</div>
+              <div style="font-size:.7rem;color:var(--muted)">GF/partido</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:1.1rem;font-weight:900;color:var(--red)">${ha.ga ?? '—'}</div>
+              <div style="font-size:.7rem;color:var(--muted)">GC/partido</div>
+            </div>
+          </div>` :
+          `<div style="color:var(--muted);font-size:.82rem;padding:8px 0">Sin datos de local</div>`
+        }
+      </div>
+
+      <!-- Team B como VISITANTE -->
+      <div style="background:#0d1117;border-radius:10px;padding:14px;border-left:3px solid var(--orange)">
+        <div style="font-size:.7rem;font-weight:800;color:var(--orange);letter-spacing:1px;margin-bottom:8px">
+          ✈️ ${teamB} — VISITANTE
+        </div>
+        ${ba.n ? `
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:.8rem;color:var(--muted)">Partidos</span>
+            <span style="font-weight:700">${ba.n}</span>
+          </div>
+          <div style="font-size:.8rem;color:var(--muted);margin-bottom:3px">% victorias de visita</div>
+          <div style="font-size:1.5rem;font-weight:900;color:${ba.win_pct>=50?'var(--green)':ba.win_pct>=35?'var(--blue)':'var(--orange)'}">${ba.win_pct}%</div>
+          ${pBar(ba.win_pct, ba.win_pct>=50?'var(--green)':ba.win_pct>=35?'var(--blue)':'var(--orange)')}
+          <div style="display:flex;gap:12px;margin-top:10px">
+            <div style="text-align:center">
+              <div style="font-size:1.1rem;font-weight:900;color:var(--blue)">${ba.gf ?? '—'}</div>
+              <div style="font-size:.7rem;color:var(--muted)">GF/partido</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:1.1rem;font-weight:900;color:var(--red)">${ba.ga ?? '—'}</div>
+              <div style="font-size:.7rem;color:var(--muted)">GC/partido</div>
+            </div>
+          </div>` :
+          `<div style="color:var(--muted);font-size:.82rem;padding:8px 0">Sin datos de visita</div>`
+        }
+      </div>
     </div>`;
 }
 
@@ -2078,8 +2226,8 @@ async function runLiveAnalysis(match) {
   const period    = match.period || 1;
 
   // Obtener xG/PPG/RPG de los inputs actuales
-  const xgA = parseFloat(document.getElementById('xgA').value) || (sport === 'nba' ? 115 : sport === 'mlb' ? 4.5 : 1.4);
-  const xgB = parseFloat(document.getElementById('xgB').value) || (sport === 'nba' ? 112 : sport === 'mlb' ? 4.2 : 1.1);
+  const xgA = parseFloat(document.getElementById('xgA').value) || (sport === 'nba' ? 115 : sport === 'mlb' ? 4.5 : sport === 'nhl' ? 3.1 : 1.4);
+  const xgB = parseFloat(document.getElementById('xgB').value) || (sport === 'nba' ? 112 : sport === 'mlb' ? 4.2 : sport === 'nhl' ? 2.9 : 1.1);
 
   // Calcular minuto/cuarto/inning
   let extra = {};
@@ -2338,6 +2486,7 @@ function renderGlaiNBA(d, teamA, teamB) {
   document.getElementById('histCardA').style.display = 'none';
   document.getElementById('histCardB').style.display = 'none';
   document.getElementById('lgCard').style.display = 'none';
+  document.getElementById('homeFactorCard').style.display = 'none';
 
   // Narrative
   document.getElementById('narrative').textContent = bet.narrative || '';
@@ -2493,6 +2642,187 @@ function renderGlaiMLB(d, teamA, teamB) {
   document.getElementById('histCardA').style.display = 'none';
   document.getElementById('histCardB').style.display = 'none';
   document.getElementById('lgCard').style.display = 'none';
+  document.getElementById('homeFactorCard').style.display = 'none';
+
+  // Narrative
+  document.getElementById('narrative').textContent = bet.narrative || '';
+}
+
+// ════════════════════════════════════════════════════
+// GLAI NHL
+// ════════════════════════════════════════════════════
+function renderGlaiNHL(d, teamA, teamB) {
+  const pred    = d.prediction || {};
+  const bet     = d.bet  || {};
+  const pA      = pred.pctA || 0;
+  const pB      = pred.pctB || 0;
+  const periods = pred.periods || [];
+  const matrix  = pred.matrix  || [];
+  const first   = pred.period1 || {};
+
+  document.getElementById('glaiResults').style.display = '';
+
+  // Live banner
+  const liveM = window._currentLiveMatch;
+  const bannerEl = document.getElementById('liveMatchBanner');
+  if (liveM && liveM.homeScore !== '' && liveM.awayScore !== '') {
+    bannerEl.style.display = '';
+    bannerEl.innerHTML = `<div class="liveBanner">
+      <div class="livePulse"></div>
+      <div class="liveTeams">
+        <div style="font-size:.7rem;color:var(--red);font-weight:800;letter-spacing:1px;margin-bottom:4px">🏒 EN VIVO — NHL</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="text-align:right;flex:1"><div style="font-weight:700">${teamA}</div></div>
+          <div class="liveScore">${liveM.homeScore} - ${liveM.awayScore}</div>
+          <div style="flex:1"><div style="font-weight:700">${teamB}</div></div>
+        </div>
+      </div>
+      <div style="text-align:center"><div class="liveMinute">⏱ EN CURSO</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:6px">${formatFullDate(liveM.date)}</div></div>
+    </div>`;
+  } else if (liveM) {
+    bannerEl.style.display = '';
+    bannerEl.innerHTML = `<div class="upcomingBanner">
+      <span style="font-size:1.2rem">🏒</span>
+      <div><div style="font-size:.75rem;color:var(--blue);font-weight:800;letter-spacing:1px">PRÓXIMO — NHL</div>
+        <div style="font-weight:700;margin-top:2px">${teamA} vs ${teamB}</div>
+        <div style="font-size:.82rem;color:var(--green);font-weight:600;margin-top:4px">📅 ${formatFullDate(liveM.date)}</div>
+      </div></div>`;
+  } else { bannerEl.style.display = 'none'; }
+
+  // Win probability bar (no draw in NHL)
+  document.getElementById('probBar').innerHTML = `
+    <div class="probSeg probA" style="width:${pA}%">${pA>8?pA+'%':''}<span style="font-size:.65rem;opacity:.8">${pA>8?teamA:''}</span></div>
+    <div class="probSeg probB" style="width:${pB}%">${pB>8?pB+'%':''}<span style="font-size:.65rem;opacity:.8">${pB>8?teamB:''}</span></div>`;
+
+  // Stat cards
+  const dq = pred.dataQuality || 0;
+  const dqColor = dq >= 70 ? 'var(--green)' : dq >= 40 ? 'var(--orange)' : 'var(--red)';
+  document.getElementById('xgRow').innerHTML = `
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--blue)">${pred.projHome||'?'}</div><div class="sportCardLbl">Goles — ${teamA}</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--red)">${pred.projAway||'?'}</div><div class="sportCardLbl">Goles — ${teamB}</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--green)">${pred.total||'?'}</div><div class="sportCardLbl">Total Proyectado</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--orange)">${pred.over5_5||0}%</div><div class="sportCardLbl">Over 5.5</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:var(--purple)">${pred.over6_5||0}%</div><div class="sportCardLbl">Over 6.5</div></div>
+    <div class="sportCard"><div class="sportCardVal" style="color:${dqColor}">${dq}%</div><div class="sportCardLbl">Calidad Datos</div></div>`;
+
+  // Mini stats
+  document.getElementById('miniStats').innerHTML = `
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--green)">${pA >= pB ? teamA : teamB}</div><div class="miniStatLbl">Favorito</div></div>
+    <div class="miniStat"><div class="miniStatVal">${Math.max(pA, pB)}%</div><div class="miniStatLbl">Confianza</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--blue)">${pred.puckLineHome||0}%</div><div class="miniStatLbl">Puck Line ${teamA} -1.5</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--red)">${pred.otProb||0}%</div><div class="miniStatLbl">Tiempo Extra / SO</div></div>
+    <div class="miniStat"><div class="miniStatVal" style="color:var(--gold)">${d.total||0}</div><div class="miniStatLbl">Partidos aprendidos</div></div>`;
+
+  // Period-by-period table + Period 1 block + score matrix
+  document.getElementById('matrixGrid').outerHTML = `<div id="matrixGrid"></div>`;
+  document.getElementById('matrixGrid').innerHTML = `
+
+    <!-- Period 1 block -->
+    <div class="firstInningBox" style="background:linear-gradient(135deg,#001a2d,#0d1117);border-color:#0288d155">
+      <div style="font-size:.8rem;font-weight:800;color:var(--blue);letter-spacing:1px;margin-bottom:10px">🏒 ANÁLISIS — PRIMER PERÍODO</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="sportCard" style="background:#0d1117">
+          <div class="sportCardVal" style="color:var(--blue)">${first.projTotal||'?'}</div>
+          <div class="sportCardLbl">Goles P1 proyectados</div>
+        </div>
+        <div class="sportCard" style="background:#0d1117">
+          <div class="sportCardVal" style="color:var(--green)">${first.scoreAny||0}%</div>
+          <div class="sportCardLbl">Alguien anota</div>
+        </div>
+        <div class="sportCard" style="background:#0d1117">
+          <div class="sportCardVal" style="color:var(--orange)">${first.nrfp||0}%</div>
+          <div class="sportCardLbl">NRFP (sin goles P1)</div>
+        </div>
+        <div class="sportCard" style="background:#0d1117">
+          <div class="sportCardVal" style="color:var(--purple)">${first.over1_5||0}%</div>
+          <div class="sportCardLbl">Over 1.5 P1</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;text-align:center;background:#0d1117;border-radius:8px;padding:10px">
+          <div style="font-size:1.2rem;font-weight:900;color:var(--blue)">${first.projHome||'?'}</div>
+          <div style="font-size:.72rem;color:var(--muted)">${teamA}</div>
+        </div>
+        <div style="flex:1;text-align:center;background:#0d1117;border-radius:8px;padding:10px">
+          <div style="font-size:1.2rem;font-weight:900;color:var(--red)">${first.projAway||'?'}</div>
+          <div style="font-size:.72rem;color:var(--muted)">${teamB}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3-period table -->
+    <div style="font-size:.85rem;font-weight:700;color:var(--blue);margin:14px 0 10px">📊 Proyección por Período</div>
+    <table class="periodTable" style="margin-bottom:0">
+      <thead><tr>
+        <th>Período</th>
+        <th style="color:var(--blue)">${teamA}</th>
+        <th style="color:var(--red)">${teamB}</th>
+        <th style="color:var(--green)">Total</th>
+        <th>O/U</th>
+        <th>Over %</th>
+      </tr></thead>
+      <tbody>${periods.map(p => `<tr>
+        <td style="font-weight:700;color:var(--muted)">P${p.period}</td>
+        <td class="pHome">${p.home}</td>
+        <td class="pAway">${p.away}</td>
+        <td class="pTotal">${p.total}</td>
+        <td class="pOu">${p.ouLine}</td>
+        <td><span class="tag ${p.overPct>=55?'tag-green':'tag-orange'}">${p.overPct}%</span></td>
+      </tr>`).join('')}
+      <tr style="background:#0d1117">
+        <td style="font-weight:900;color:var(--text)">TOTAL</td>
+        <td class="pHome" style="font-size:1.1rem">${pred.projHome}</td>
+        <td class="pAway" style="font-size:1.1rem">${pred.projAway}</td>
+        <td class="pTotal" style="font-size:1.1rem">${pred.total}</td>
+        <td class="pOu">${pred.ouLine||'5.5'}</td>
+        <td><span class="tag ${(pred.over5_5||0)>=55?'tag-green':'tag-orange'}">${pred.over5_5||0}%</span></td>
+      </tr></tbody>
+    </table>
+
+    <!-- O/U lines grid -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 10px">
+      <div class="sportCard"><div class="sportCardVal" style="color:var(--green)">${pred.over5_5||0}%</div><div class="sportCardLbl">Over 5.5</div></div>
+      <div class="sportCard"><div class="sportCardVal" style="color:var(--blue)">${pred.over6_0||0}%</div><div class="sportCardLbl">Over 6.0</div></div>
+      <div class="sportCard"><div class="sportCardVal" style="color:var(--orange)">${pred.over6_5||0}%</div><div class="sportCardLbl">Over 6.5</div></div>
+      <div class="sportCard"><div class="sportCardVal" style="color:var(--red)">${pred.over7_5||0}%</div><div class="sportCardLbl">Over 7.5</div></div>
+      <div class="sportCard"><div class="sportCardVal" style="color:var(--purple)">${pred.otProb||0}%</div><div class="sportCardLbl">OT/SO</div></div>
+    </div>
+
+    <!-- Score matrix -->
+    <div style="font-size:.85rem;font-weight:700;color:var(--blue);margin:14px 0 10px">🎯 Marcadores más probables</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">
+      ${matrix.slice(0,10).map((c,i) => `
+        <div class="mCell ${i<3?'top':''}">
+          <div class="mCellScore">${c.h} - ${c.a}</div>
+          <div class="mCellPct">${(c.p*100).toFixed(1)}%</div>
+        </div>`).join('')}
+    </div>`;
+
+  // Bet block
+  const best = bet.best, alt = bet.alt;
+  let betHtml = '';
+  if (best) betHtml += `<div class="betBlock">
+    <div class="betTitle">⭐ APUESTA PRINCIPAL — 🏒 NHL</div>
+    <div class="betMain">${best.bet}</div>
+    <div class="betConf"><div class="confBar"><div class="confFill" style="width:${best.conf}%"></div></div>
+      <span style="font-size:.9rem;font-weight:700;color:var(--green)">${best.conf}%</span></div>
+    <div class="betReason">${best.reason}</div></div>`;
+  if (alt) betHtml += `<div class="betBlock" style="border-color:#ff980055;background:linear-gradient(135deg,#1a1200,#1a0d00)">
+    <div class="betTitle" style="color:var(--orange)">🔄 ALTERNATIVA</div>
+    <div class="betMain" style="color:var(--orange)">${alt.bet}</div>
+    <div class="betConf"><div class="confBar"><div class="confFill" style="width:${alt.conf}%;background:linear-gradient(90deg,var(--orange),var(--gold))"></div></div>
+      <span style="font-size:.9rem;font-weight:700;color:var(--orange)">${alt.conf}%</span></div>
+    <div class="betReason">${alt.reason}</div></div>`;
+  document.getElementById('betContent').innerHTML = betHtml;
+
+  // Hide soccer-only panels
+  document.getElementById('cornersCard').style.display = 'none';
+  document.getElementById('cardsCard').style.display = 'none';
+  document.getElementById('histCardA').style.display = 'none';
+  document.getElementById('histCardB').style.display = 'none';
+  document.getElementById('lgCard').style.display = 'none';
+  document.getElementById('homeFactorCard').style.display = 'none';
 
   // Narrative
   document.getElementById('narrative').textContent = bet.narrative || '';
@@ -2534,6 +2864,7 @@ async function loadStats() {
     document.getElementById('statSoccer').textContent = (bs.soccer || 0).toLocaleString();
     document.getElementById('statNba').textContent    = (bs.nba    || 0).toLocaleString();
     document.getElementById('statMlb').textContent    = (bs.mlb    || 0).toLocaleString();
+    document.getElementById('statNhl').textContent    = (bs.nhl    || 0).toLocaleString();
 
     // Próximo scan (APScheduler corre cada 1h desde el último)
     if (stats.lastScan) {
@@ -2614,7 +2945,7 @@ async function loadKeyMatches() {
       el.innerHTML = '<p style="color:var(--muted);font-size:.85rem">No hay partidos con esa probabilidad hoy. Baja el umbral o revisa mañana.</p>';
       return;
     }
-    const sportIcon = { soccer:'⚽', nba:'🏀', mlb:'⚾' };
+    const sportIcon = { soccer:'⚽', nba:'🏀', mlb:'⚾', nhl:'🏒', hockey:'🏒' };
     el.innerHTML = d.matches.map(m => `
       <div style="background:#0d1117;border-radius:10px;padding:14px;margin-bottom:10px;border-left:3px solid var(--orange)">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -2969,7 +3300,7 @@ function renderParlayPicker(list) {
     picker.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:.85rem">No hay partidos disponibles</div>';
     return;
   }
-  const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾' };
+  const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾', nhl:'🏒', hockey:'🏒' };
   picker.innerHTML = list.map(m => {
     const key  = `${m.homeTeam}||${m.awayTeam}||${m.sport||'soccer'}`;
     const sel  = parlaySelections.some(s => s._key === key);
@@ -3032,7 +3363,7 @@ function renderParlaySelections() {
     el.innerHTML = '<div style="font-size:.82rem;color:var(--muted);text-align:center;padding:16px">Selecciona partidos arriba para agregarlos aquí</div>';
     return;
   }
-  const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾' };
+  const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾', nhl:'🏒', hockey:'🏒' };
   el.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px">` +
     parlaySelections.map((m, i) => `
       <div style="display:flex;align-items:center;gap:8px;background:#0d1117;border-radius:8px;padding:8px 12px">
@@ -3079,7 +3410,7 @@ function renderParlayResults(data) {
   const combined = document.getElementById('parlayCombinedCard');
   section.style.display = '';
 
-  const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾' };
+  const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾', nhl:'🏒', hockey:'🏒' };
 
   list.innerHTML = data.matches.map((m, idx) => {
     const pred  = m.prediction || {};
