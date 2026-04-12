@@ -1304,7 +1304,7 @@ async function loadMatches(silent = false) {
     if (r.status === 401) { showLanding(); return; }
     const d = await r.json();
     allMatches = d.matches || [];
-    renderMatches(allMatches);
+    filterMatches();   // respeta el filtro de deporte activo
     // Actualizar contador de refresh
     const btn = document.getElementById('refreshBtn');
     if (btn) btn.title = 'Última actualización: ' + new Date().toLocaleTimeString('es-MX');
