@@ -2758,9 +2758,9 @@ function renderGlaiNHL(d, teamA, teamB) {
       </tr></thead>
       <tbody>${periods.map(p => `<tr>
         <td style="font-weight:700;color:var(--muted)">P${p.period}</td>
-        <td class="pHome">${p.home}</td>
-        <td class="pAway">${p.away}</td>
-        <td class="pTotal">${p.total}</td>
+        <td class="pHome">${p.projHome ?? p.home ?? '?'}</td>
+        <td class="pAway">${p.projAway ?? p.away ?? '?'}</td>
+        <td class="pTotal">${p.projTotal ?? p.total ?? '?'}</td>
         <td class="pOu">${p.ouLine}</td>
         <td><span class="tag ${p.overPct>=55?'tag-green':'tag-orange'}">${p.overPct}%</span></td>
       </tr>`).join('')}
