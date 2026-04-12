@@ -679,7 +679,7 @@ class GLAIEngine:
     # ─── NBA — Predicción v2 ──────────────────────────────────────
     def predict_nba(self, home_ppg, away_ppg,
                     home_apg=None, away_apg=None, h2h=None,
-                    confidence_score=0):
+                    confidence_score=0, hist_a=None, hist_b=None):
         """
         Predicción NBA v2 — distribución Normal con ratings ofensivos/defensivos.
         home_ppg / away_ppg : puntos anotados por partido (ponderados)
@@ -711,6 +711,12 @@ class GLAIEngine:
             ratio = h2h_proj_total / (adj_home + adj_away) if (adj_home + adj_away) > 0 else 1
             adj_home *= ratio
             adj_away *= ratio
+
+        # ── Momentum de forma reciente (±8% sobre proyección) ────────
+        if hist_a:
+            adj_home *= max(0.92, min(1.08, self._momentum_factor(hist_a)))
+        if hist_b:
+            adj_away *= max(0.92, min(1.08, self._momentum_factor(hist_b)))
 
         spread = adj_home - adj_away
         z      = spread / (SIGMA * math.sqrt(2))
@@ -806,18 +812,14 @@ class GLAIEngine:
         wgt_total_b = self._weighted_avg(hist_b, 'myG') + self._weighted_avg(hist_b, 'oppG')
         hist_ou_trend = (wgt_total_a + wgt_total_b) / 2
 
-        # H2H
+        # H2H — con decay exponencial (partidos recientes pesan más)
         h2h_info = {}
         if h2h and len(h2h) >= 3:
-            h2h_wins_a = sum(
-                1 for r in h2h
-                if (team_a[:6].lower() in r['home_team'].lower() and r['home_goals'] > r['away_goals'])
-                or (team_a[:6].lower() in r['away_team'].lower() and r['away_goals'] > r['home_goals'])
-            )
-            h2h_totals = [r['home_goals'] + r['away_goals'] for r in h2h]
+            h2h_decay  = self._h2h_decay_avg(h2h, team_a, decay=0.75)
             h2h_info = {
-                'n': len(h2h), 'winRateA': round(h2h_wins_a / len(h2h) * 100),
-                'avgPts': round(sum(h2h_totals) / len(h2h_totals), 1),
+                'n':        h2h_decay.get('n', len(h2h)),
+                'winRateA': round(h2h_decay.get('winRateA', 0.5) * 100),
+                'avgPts':   round(h2h_decay.get('avgGoals', 0), 1),
             }
 
         # Confianza de datos
@@ -906,7 +908,7 @@ class GLAIEngine:
     # ─── MLB — Predicción v2 ──────────────────────────────────────
     def predict_mlb(self, home_rpg, away_rpg,
                     home_rag=None, away_rag=None, h2h=None,
-                    confidence_score=0):
+                    confidence_score=0, hist_a=None, hist_b=None):
         """
         Predicción MLB v2 — Poisson con ratings ofensivos/defensivos.
         home_rpg / away_rpg : carreras anotadas por partido (ponderadas)
@@ -936,6 +938,14 @@ class GLAIEngine:
             adj_home *= ratio
             adj_away *= ratio
             h2h_used = {'n': len(h2h), 'avgRuns': round(h2h_avg, 1)}
+
+        # ── Momentum de forma reciente (±6% sobre λ Poisson) ─────────
+        if hist_a:
+            adj_home *= max(0.94, min(1.06, self._momentum_factor(hist_a)))
+        if hist_b:
+            adj_away *= max(0.94, min(1.06, self._momentum_factor(hist_b)))
+        adj_home = max(0.5, adj_home)
+        adj_away = max(0.5, adj_away)
 
         # ── Probabilidades Poisson ────────────────────────────────────
         p_home = p_away = p_tie = 0.0
@@ -1099,18 +1109,14 @@ class GLAIEngine:
         streak_a = streak(hist_a)
         streak_b = streak(hist_b)
 
-        # H2H
+        # H2H — con decay exponencial (partidos recientes pesan más)
         h2h_info = {}
         if h2h and len(h2h) >= 3:
-            wins_a = sum(
-                1 for r in h2h
-                if (team_a[:6].lower() in r['home_team'].lower() and r['home_goals'] > r['away_goals'])
-                or (team_a[:6].lower() in r['away_team'].lower() and r['away_goals'] > r['home_goals'])
-            )
-            runs = [r['home_goals']+r['away_goals'] for r in h2h]
+            h2h_decay = self._h2h_decay_avg(h2h, team_a, decay=0.75)
             h2h_info = {
-                'n': len(h2h), 'winRateA': round(wins_a/len(h2h)*100),
-                'avgRuns': round(sum(runs)/len(runs), 1),
+                'n':        h2h_decay.get('n', len(h2h)),
+                'winRateA': round(h2h_decay.get('winRateA', 0.5) * 100),
+                'avgRuns':  round(h2h_decay.get('avgGoals', 0), 1),
             }
 
         n_total    = len(hist_a) + len(hist_b)
