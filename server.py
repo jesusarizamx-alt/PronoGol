@@ -814,11 +814,13 @@ def debug_nhl():
         'nba_check':       nba_test,
         'get_nhl_result':  {'count': len(parsed), 'games': parsed_summary},
         'diagnosis': (
-            'ESPN funciona (NBA ok), revisar hockey/nhl endpoint o no hay juegos en esos días'
-            if nba_test.get('events', 0) > 0 and not all_espn_events
-            else ('No hay juegos NHL en los próximos 4 días' if nba_test.get('events', 0) > 0
+            'ESPN funciona (NBA ok) y NHL tiene juegos — get_nhl_matches() debería funcionar ahora'
+            if nba_test.get('events', 0) > 0 and all_espn_events
+            else ('ESPN funciona pero no hay juegos NHL en los próximos 4 días'
+                  if nba_test.get('events', 0) > 0
                   else 'ESPN bloqueado completamente')
         ),
+        'fix_note': 'espn.py actualizado: usa ESPN directo para NHL igual que NBA/MLB, sin nhle.com',
     })
 
 

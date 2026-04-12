@@ -109,27 +109,24 @@ class ESPNScraper:
     # ─── NHL ──────────────────────────────────────────────────────
     def get_nhl_matches(self, date_str=None):
         """
-        Partidos NHL de hoy y los próximos días usando ESPN.
-        Busca hoy, mañana y pasado mañana para capturar playoffs con
-        días de descanso entre juegos.
+        Partidos NHL usando ESPN (igual que NBA y MLB).
+        Busca hoy + mañana + pasado mañana para capturar juegos con
+        días de descanso entre partidos (playoffs, etc.).
         date_str: 'YYYY-MM-DD' o None para hoy.
         """
         from datetime import datetime, timezone, timedelta
         base = (datetime.strptime(date_str, '%Y-%m-%d')
                 if date_str else datetime.now(timezone.utc).replace(tzinfo=None))
 
-        seen = set()
+        seen    = set()
         results = []
 
-        # Buscar en los próximos 3 días (hoy, mañana, pasado)
-        for delta in range(3):
-            day = base + timedelta(days=delta)
-            day_nodash = day.strftime('%Y%m%d')
+        for delta in range(3):          # hoy, +1, +2
+            day        = base + timedelta(days=delta)
+            day_nodash = day.strftime('%Y%m%d')   # ESPN usa YYYYMMDD
             day_dash   = day.strftime('%Y-%m-%d')
 
-            # ESPN con fecha explícita
-            evs = self._fetch_scoreboard('hockey', 'nhl', day_nodash)
-            for ev in evs:
+            for ev in self._fetch_scoreboard('hockey', 'nhl', day_nodash):
                 d = self._event_dict(ev, 'nhl', sport='nhl')
                 if not d:
                     continue
@@ -137,14 +134,9 @@ class ESPNScraper:
                 if key in seen:
                     continue
                 seen.add(key)
-                # Añadir la fecha del día buscado si el evento no tiene fecha
                 if not d.get('date'):
                     d['date'] = day_dash + 'T00:00:00Z'
                 results.append(d)
-
-        # Si ESPN no devolvió nada, intentar NHL API oficial como último recurso
-        if not results:
-            results = self._get_nhl_from_nhle(date_str)
 
         return results
 
