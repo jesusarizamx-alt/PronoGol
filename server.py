@@ -706,107 +706,119 @@ def team_stats():
 # RUTA — DIAGNÓSTICO ESPN NHL
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/debug/nhl')
-@require_admin
 def debug_nhl():
     """
-    Diagnóstico NHL: muestra exactamente qué devuelve ESPN antes y después de filtrar.
-    Solo visible para admin. Accede a /api/debug/nhl desde el navegador.
+    Diagnóstico NHL completo — abierto para facilitar testing.
+    Accede a /api/debug/nhl desde el navegador.
+    Prueba ESPN día por día y muestra exactamente qué regresa.
     """
     import requests as req
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
 
-    from datetime import datetime, timezone as tz
-    today = datetime.now(tz.utc).strftime('%Y-%m-%d')
+    now_utc  = datetime.now(timezone.utc)
+    today    = now_utc.strftime('%Y-%m-%d')
+    now_ts   = now_utc.timestamp()
 
-    # Probar NHL API oficial
-    nhle_ok = False; nhle_scoreboard = 0; nhle_schedule = 0
-    nhle_scoreboard_games = []; nhle_schedule_games = []
-    try:
-        rn = req.get('https://api-web.nhle.com/v1/scoreboard/now', timeout=8)
-        nhle_ok = rn.ok
-        if rn.ok:
-            nhle_scoreboard_games = rn.json().get('games', [])
-            nhle_scoreboard = len(nhle_scoreboard_games)
-    except Exception:
-        pass
-    try:
-        rs = req.get(f'https://api-web.nhle.com/v1/schedule/{today}', timeout=8)
-        if rs.ok:
-            for day in rs.json().get('gameWeek', []):
-                if today in day.get('date', ''):
-                    nhle_schedule_games = day.get('games', [])
-                    nhle_schedule = len(nhle_schedule_games)
-                    break
-    except Exception:
-        pass
-
-    # Probar ESPN
-    espn_ok = False; raw_status = 0; events = []
-    try:
-        re2 = req.get('https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard', timeout=8)
-        raw_status = re2.status_code
-        espn_ok = re2.ok
-        events = re2.json().get('events', []) if re2.ok else []
-    except Exception:
-        pass
-
-    url = f'nhle scoreboard({nhle_scoreboard}) + schedule({nhle_schedule}) | espn({len(events)})'
-
-    # Parsear igual que espn.py
-    parsed = espn.get_nhl_matches()
-
-    # Ver cuáles se filtran como "finales"
-    FINAL_STATUSES = {
-        'status_final', 'final', 'post', 'closed', 'complete',
-        'finished', 'ended', 'ft', 'full-time',
-        'status_full_time', 'status_postponed', 'status_canceled',
-        'canceled', 'postponed', 'abandoned',
+    ESPN_BASE_URL = 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://www.espn.com/',
     }
-    now_ts = datetime.now(timezone.utc).timestamp()
 
-    detail = []
-    for m in parsed:
-        s = (m.get('status') or '').lower().replace(' ', '_')
-        is_final_status = s in FINAL_STATUSES or any(
-            tok in s for tok in ('final','finish','ended','closed','complete'))
-        has_score = m.get('homeScore') not in ('', None) and m.get('awayScore') not in ('', None)
-        time_filter = False
-        age_hours = None
-        if has_score and m.get('date'):
-            try:
-                mt = datetime.fromisoformat(m['date'].replace('Z', '+00:00')).timestamp()
-                age_hours = round((now_ts - mt) / 3600, 1)
-                time_filter = age_hours > 2
-            except Exception:
-                pass
-        detail.append({
-            'match':          f"{m['homeTeam']} vs {m['awayTeam']}",
-            'status':         m.get('status'),
-            'date':           m.get('date'),
-            'score':          f"{m.get('homeScore','')} - {m.get('awayScore','')}",
-            'age_hours':      age_hours,
-            'filtered_by':    ('status' if is_final_status else ('time' if time_filter else 'NOT_FILTERED')),
-            'would_show':     not (is_final_status or time_filter),
-        })
+    # ── 1. Probar ESPN día por día (hoy, +1, +2, +3) ─────────────
+    days_tested = []
+    all_espn_events = []
+    for delta in range(4):
+        day = now_utc + timedelta(days=delta)
+        day_nodash = day.strftime('%Y%m%d')
+        day_dash   = day.strftime('%Y-%m-%d')
+        entry = {'date': day_dash, 'nodash': day_nodash, 'status': None, 'events': 0, 'error': None, 'games': []}
+        try:
+            r = req.get(ESPN_BASE_URL, headers=headers,
+                        params={'limit': 50, 'dates': day_nodash}, timeout=10)
+            entry['status'] = r.status_code
+            if r.ok:
+                evs = r.json().get('events', [])
+                entry['events'] = len(evs)
+                for ev in evs:
+                    comp = ev.get('competitions', [{}])[0]
+                    competitors = comp.get('competitors', [])
+                    if len(competitors) >= 2:
+                        home = next((c for c in competitors if c.get('homeAway') == 'home'), competitors[0])
+                        away = next((c for c in competitors if c.get('homeAway') == 'away'), competitors[1])
+                        st = comp.get('status', {}).get('type', {}).get('name', '')
+                        entry['games'].append({
+                            'match': f"{home.get('team',{}).get('displayName','')} vs {away.get('team',{}).get('displayName','')}",
+                            'status': st,
+                            'score': f"{home.get('score','')} - {away.get('score','')}",
+                        })
+                        all_espn_events.append({'day': day_dash, **entry['games'][-1]})
+            else:
+                entry['error'] = r.text[:200]
+        except Exception as ex:
+            entry['error'] = str(ex)[:200]
+        days_tested.append(entry)
 
-    visible = [d for d in detail if d['would_show']]
-    # Resumen de estados del scoreboard
-    nhle_states = {}
-    for g in (nhle_scoreboard_games or nhle_schedule_games):
-        st = g.get('gameState', '?')
-        nhle_states[st] = nhle_states.get(st, 0) + 1
+    # ── 2. Probar ESPN sin fecha (scoreboard por defecto) ─────────
+    espn_default = {'status': None, 'events': 0, 'error': None}
+    try:
+        r0 = req.get(ESPN_BASE_URL, headers=headers, params={'limit': 50}, timeout=10)
+        espn_default['status'] = r0.status_code
+        if r0.ok:
+            espn_default['events'] = len(r0.json().get('events', []))
+        else:
+            espn_default['error'] = r0.text[:200]
+    except Exception as ex:
+        espn_default['error'] = str(ex)[:200]
+
+    # ── 3. Probar nhle.com ────────────────────────────────────────
+    nhle_result = {'scoreboard': None, 'schedule': None, 'error': None}
+    try:
+        rn = req.get('https://api-web.nhle.com/v1/scoreboard/now', timeout=5)
+        nhle_result['scoreboard'] = rn.status_code
+    except Exception as ex:
+        nhle_result['scoreboard'] = f'ERROR: {str(ex)[:80]}'
+    try:
+        rs = req.get(f'https://api-web.nhle.com/v1/schedule/{today}', timeout=5)
+        nhle_result['schedule'] = rs.status_code
+    except Exception as ex:
+        nhle_result['schedule'] = f'ERROR: {str(ex)[:80]}'
+
+    # ── 4. Probar NBA (para comparar — si NBA funciona ESPN funciona) ──
+    nba_test = {'status': None, 'events': 0, 'error': None}
+    try:
+        rn2 = req.get('https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard',
+                      headers=headers, params={'limit': 20}, timeout=8)
+        nba_test['status'] = rn2.status_code
+        if rn2.ok:
+            nba_test['events'] = len(rn2.json().get('events', []))
+    except Exception as ex:
+        nba_test['error'] = str(ex)[:100]
+
+    # ── 5. Qué devuelve espn.get_nhl_matches() ahora mismo ───────
+    try:
+        parsed = espn.get_nhl_matches()
+    except Exception as ex:
+        parsed = []
+    parsed_summary = [{'match': f"{m.get('homeTeam')} vs {m.get('awayTeam')}",
+                       'status': m.get('status'), 'date': m.get('date'),
+                       'source': m.get('source', 'espn')} for m in parsed]
 
     return jsonify({
-        'ok':               True,
-        'today':            today,
-        'nhle_scoreboard':  {'ok': nhle_ok, 'games': nhle_scoreboard},
-        'nhle_schedule':    {'games': nhle_schedule},
-        'espn':             {'ok': espn_ok, 'games': len(events), 'http': raw_status},
-        'nhle_gameStates':  nhle_states,   # FUT/PRE/LIVE/FINAL/OFF counts
-        'parsed_by_espnpy': len(parsed),
-        'visible_after_filter': len(visible),
-        'filtered_as_final': len(parsed) - len(visible),
-        'detail':           detail,
+        'ok':              True,
+        'server_time_utc': today,
+        'espn_by_day':     days_tested,
+        'espn_default':    espn_default,
+        'nhle_api':        nhle_result,
+        'nba_check':       nba_test,
+        'get_nhl_result':  {'count': len(parsed), 'games': parsed_summary},
+        'diagnosis': (
+            'ESPN funciona (NBA ok), revisar hockey/nhl endpoint o no hay juegos en esos días'
+            if nba_test.get('events', 0) > 0 and not all_espn_events
+            else ('No hay juegos NHL en los próximos 4 días' if nba_test.get('events', 0) > 0
+                  else 'ESPN bloqueado completamente')
+        ),
     })
 
 
