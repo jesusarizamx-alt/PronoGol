@@ -1415,7 +1415,7 @@ function renderMatches(list) {
     });
     html += `<div style="margin-bottom:20px">
       <div style="font-size:.8rem;font-weight:800;color:var(--green);letter-spacing:1px;margin-bottom:10px">
-        🗓 PRÓXIMOS HOY — ${pre.length} partido${pre.length !== 1 ? 's' : ''}
+        🗓 PRÓXIMOS — ${pre.length} partido${pre.length !== 1 ? 's' : ''}
       </div>
       ${Object.entries(bySport).map(([sp, leagues]) => `
         <div style="margin-bottom:16px">
@@ -3297,23 +3297,54 @@ function renderParlayPicker(list) {
   const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾', nhl:'🏒', hockey:'🏒' };
   picker.innerHTML = list.map(m => {
     const key  = `${m.homeTeam}||${m.awayTeam}||${m.sport||'soccer'}`;
-    const sel  = parlaySelections.some(s => s._key === key);
+    const existing = parlaySelections.find(s => s._key === key);
+    const sel  = !!existing;
     const sp   = m.sport || 'soccer';
+    const isSoccer = sp === 'soccer';
     const st   = matchStatus(m);
     const stLabel = st === 'live' ? '<span style="color:var(--red);font-size:.7rem;font-weight:700">🔴 EN VIVO</span>'
                   : `<span style="color:var(--muted);font-size:.7rem">${formatFullDate(m.date)}</span>`;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--border);cursor:pointer;transition:.15s;${sel?'background:#0d2137;':''}"
-      onclick="toggleParlay({homeTeam:'${esc(m.homeTeam)}',awayTeam:'${esc(m.awayTeam)}',sport:'${sp}',league:'${m.league||''}',date:'${m.date||''}',_key:'${key}'})">
-      <div style="font-size:1.2rem;min-width:22px">${sportIcon[sp]||'🏟'}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.homeTeam} <span style="color:var(--muted)">vs</span> ${m.awayTeam}</div>
-        <div style="font-size:.7rem;color:var(--muted)">${LEAGUE_NAMES[m.league]||m.league||sp.toUpperCase()} · ${stLabel}</div>
+    const currentPick = existing?.pick || '';
+
+    // Botones de pick — soccer: Local/Empate/Visita, otros: Local/Visita
+    const pickBtns = sel ? `
+      <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap" onclick="event.stopPropagation()">
+        <span style="font-size:.7rem;color:var(--muted);align-self:center">Selecciona:</span>
+        <button onclick="setParlayPick('${key}','home')" style="border:1.5px solid ${currentPick==='home'?'var(--blue)':'#333'};background:${currentPick==='home'?'var(--blue)':'transparent'};color:${currentPick==='home'?'#fff':'var(--muted)'};border-radius:5px;padding:3px 9px;font-size:.73rem;font-weight:700;cursor:pointer">
+          🏠 ${m.homeTeam.split(' ').slice(-1)[0]}
+        </button>
+        ${isSoccer ? `<button onclick="setParlayPick('${key}','draw')" style="border:1.5px solid ${currentPick==='draw'?'#888':'#333'};background:${currentPick==='draw'?'#555':'transparent'};color:${currentPick==='draw'?'#fff':'var(--muted)'};border-radius:5px;padding:3px 9px;font-size:.73rem;font-weight:700;cursor:pointer">
+          🤝 Empate
+        </button>` : ''}
+        <button onclick="setParlayPick('${key}','away')" style="border:1.5px solid ${currentPick==='away'?'var(--orange)':'#333'};background:${currentPick==='away'?'var(--orange)':'transparent'};color:${currentPick==='away'?'#fff':'var(--muted)'};border-radius:5px;padding:3px 9px;font-size:.73rem;font-weight:700;cursor:pointer">
+          ✈️ ${m.awayTeam.split(' ').slice(-1)[0]}
+        </button>
+      </div>` : '';
+
+    return `<div style="padding:10px 8px;border-bottom:1px solid var(--border);transition:.15s;${sel?'background:#0a1628;':''}">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-size:1.2rem;min-width:22px">${sportIcon[sp]||'🏟'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.homeTeam} <span style="color:var(--muted)">vs</span> ${m.awayTeam}</div>
+          <div style="font-size:.7rem;color:var(--muted)">${LEAGUE_NAMES[m.league]||m.league||sp.toUpperCase()} · ${stLabel}</div>
+        </div>
+        <button onclick="toggleParlay({homeTeam:'${esc(m.homeTeam)}',awayTeam:'${esc(m.awayTeam)}',sport:'${sp}',league:'${m.league||''}',date:'${m.date||''}',_key:'${key}'})"
+          style="border:2px solid ${sel?'var(--green)':'var(--blue)'};background:${sel?'var(--green)':'transparent'};color:${sel?'#fff':'var(--blue)'};border-radius:6px;padding:4px 10px;font-size:.75rem;font-weight:800;cursor:pointer;white-space:nowrap;flex-shrink:0">
+          ${sel ? '✓ Agregado' : '+ Agregar'}
+        </button>
       </div>
-      <button style="border:2px solid ${sel?'var(--green)':'var(--blue)'};background:${sel?'var(--green)':'transparent'};color:${sel?'#fff':'var(--blue)'};border-radius:6px;padding:4px 10px;font-size:.75rem;font-weight:800;cursor:pointer;white-space:nowrap">
-        ${sel ? '✓ Agregado' : '+ Agregar'}
-      </button>
+      ${pickBtns}
     </div>`;
   }).join('');
+}
+
+function setParlayPick(key, pick) {
+  const sel = parlaySelections.find(s => s._key === key);
+  if (sel) {
+    sel.pick = (sel.pick === pick) ? '' : pick;  // toggle
+  }
+  filterParlayPicker();
+  renderParlaySelections();
 }
 
 // ── Selección ────────────────────────────────────────
@@ -3358,13 +3389,34 @@ function renderParlaySelections() {
     return;
   }
   const sportIcon = { soccer:'⚽', basketball:'🏀', baseball:'⚾', nba:'🏀', mlb:'⚾', nhl:'🏒', hockey:'🏒' };
+  const pickLabel = { home:'🏠 Local', draw:'🤝 Empate', away:'✈️ Visitante', '':'Sin selección' };
+  const pickColor = { home:'var(--blue)', draw:'#888', away:'var(--orange)', '':'var(--muted)' };
+
   el.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px">` +
-    parlaySelections.map((m, i) => `
-      <div style="display:flex;align-items:center;gap:8px;background:#0d1117;border-radius:8px;padding:8px 12px">
-        <span>${sportIcon[m.sport]||'🏟'}</span>
-        <span style="flex:1;font-size:.85rem;font-weight:700">${m.homeTeam} <span style="color:var(--muted)">vs</span> ${m.awayTeam}</span>
-        <button onclick="removeFromParlay(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:0 4px">✕</button>
-      </div>`).join('') + `</div>`;
+    parlaySelections.map((m, i) => {
+      const pick = m.pick || '';
+      const isSoccer = (m.sport || 'soccer') === 'soccer';
+      return `
+      <div style="background:#0d1117;border-radius:8px;padding:10px 12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span>${sportIcon[m.sport]||'🏟'}</span>
+          <span style="flex:1;font-size:.85rem;font-weight:700">${m.homeTeam} <span style="color:var(--muted)">vs</span> ${m.awayTeam}</span>
+          <button onclick="removeFromParlay(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:0 4px">✕</button>
+        </div>
+        <div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap">
+          <button onclick="setParlayPick('${m._key}','home')" style="border:1.5px solid ${pick==='home'?'var(--blue)':'#333'};background:${pick==='home'?'var(--blue)':'transparent'};color:${pick==='home'?'#fff':'var(--muted)'};border-radius:5px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer">
+            🏠 ${m.homeTeam.split(' ').slice(-1)[0]}
+          </button>
+          ${isSoccer ? `<button onclick="setParlayPick('${m._key}','draw')" style="border:1.5px solid ${pick==='draw'?'#888':'#333'};background:${pick==='draw'?'#555':'transparent'};color:${pick==='draw'?'#fff':'var(--muted)'};border-radius:5px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer">
+            🤝 Empate
+          </button>` : ''}
+          <button onclick="setParlayPick('${m._key}','away')" style="border:1.5px solid ${pick==='away'?'var(--orange)':'#333'};background:${pick==='away'?'var(--orange)':'transparent'};color:${pick==='away'?'#fff':'var(--muted)'};border-radius:5px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer">
+            ✈️ ${m.awayTeam.split(' ').slice(-1)[0]}
+          </button>
+          ${pick ? `<span style="margin-left:auto;font-size:.72rem;font-weight:800;color:${pickColor[pick]}">✓ ${pickLabel[pick]}</span>` : `<span style="margin-left:auto;font-size:.7rem;color:var(--muted);font-style:italic">Elige un resultado</span>`}
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
 }
 
 function removeFromParlay(idx) {
@@ -3381,7 +3433,9 @@ async function runParlayAnalysis() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Analizando...'; }
   try {
     const payload = { matches: parlaySelections.map(m => ({
-      teamA: m.homeTeam, teamB: m.awayTeam, sport: m.sport, league: m.league || ''
+      teamA: m.homeTeam, teamB: m.awayTeam,
+      sport: m.sport, league: m.league || '',
+      pick: m.pick || ''   // ganador seleccionado por el usuario
     }))};
     const r = await apiFetch('/api/glai/parlay', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -3389,6 +3443,10 @@ async function runParlayAnalysis() {
     });
     const d = await r.json();
     if (!d.ok) { alert(d.msg || 'Error en análisis'); return; }
+    // Pasar las picks al resultado para mostrarlas
+    d.matches.forEach((res, i) => {
+      res._pick = parlaySelections[i]?.pick || '';
+    });
     renderParlayResults(d);
   } catch(e) {
     alert('Error: ' + e.message);
@@ -3410,6 +3468,7 @@ function renderParlayResults(data) {
     const pred  = m.prediction || {};
     const bet   = m.bet || {};
     const sport = m.sport || 'soccer';
+    const pick  = m._pick || '';
 
     // Probabilidades por deporte
     const pA = +(pred.pctA  || pred.pHome || 0);
@@ -3417,12 +3476,23 @@ function renderParlayResults(data) {
     const pD = +(pred.pctDraw || 0);
     const total = pA + pB + pD || 100;
 
-    // Ganador más probable
+    // Prob del pick seleccionado
+    const pickProb = pick === 'home' ? pA : pick === 'away' ? pB : pick === 'draw' ? pD : 0;
+    const pickName = pick === 'home' ? m.teamA : pick === 'away' ? m.teamB : pick === 'draw' ? 'Empate' : '';
+    const pickColor = pick === 'home' ? 'var(--blue)' : pick === 'away' ? 'var(--orange)' : pick === 'draw' ? '#aaa' : 'var(--muted)';
+    const pickIcon  = pick === 'home' ? '🏠' : pick === 'away' ? '✈️' : pick === 'draw' ? '🤝' : '';
+
+    // Ganador más probable (IA)
     const winnerTeam = pA >= pB && pA >= pD ? m.teamA
                      : pB >= pA && pB >= pD ? m.teamB
                      : 'Empate';
     const winnerProb = Math.max(pA, pB, pD);
-    const winColor   = pA >= pB ? 'var(--blue)' : 'var(--orange)';
+    const winColor   = pA >= pB && pA >= pD ? 'var(--blue)' : pB >= pA && pB >= pD ? 'var(--orange)' : '#aaa';
+
+    // Coincide el pick con la recomendación IA?
+    const pickMatchIA = (pick === 'home' && pA >= pB && pA >= pD) ||
+                        (pick === 'away' && pB >= pA && pB >= pD) ||
+                        (pick === 'draw' && pD >= pA && pD >= pB);
 
     // Ancho de las barras
     const wA = Math.round(pA / total * 100);
@@ -3437,7 +3507,6 @@ function renderParlayResults(data) {
         ${pred.btts   !== undefined ? `<span class="tag">⚽ Ambos anotan ${pred.btts}%</span>` : ''}
         ${pred.over25 !== undefined ? `<span class="tag">+2.5 goles ${pred.over25}%</span>` : ''}
         ${(c.cornersA||c.cornersB) ? `<span class="tag tag-blue">🔲 Córners ~${(c.cornersA||0)+(c.cornersB||0)}</span>` : ''}
-        <span class="tag tag-purple">xG ${(m.valA||0).toFixed(1)} – ${(m.valB||0).toFixed(1)}</span>
       </div>`;
     } else if (sport === 'nba') {
       extras = `<div class="parlayCornerRow" style="margin-top:8px">
@@ -3450,42 +3519,67 @@ function renderParlayResults(data) {
         ${pred.totalRuns ? `<span class="tag tag-orange">Carreras ~${pred.totalRuns}</span>` : ''}
         ${pred.ouLine    ? `<span class="tag tag-purple">O/U ${pred.ouLine}</span>` : ''}
       </div>`;
+    } else if (sport === 'nhl') {
+      extras = `<div class="parlayCornerRow" style="margin-top:8px">
+        ${pred.total  ? `<span class="tag tag-blue">Goles ~${pred.total}</span>` : ''}
+        ${pred.over5_5 ? `<span class="tag tag-orange">Over 5.5: ${pred.over5_5}%</span>` : ''}
+        ${pred.otProb  ? `<span class="tag tag-purple">OT/SO: ${pred.otProb}%</span>` : ''}
+      </div>`;
     }
 
     const bestBet = bet.best || {};
 
-    return `<div class="card" style="margin-bottom:12px;padding:16px">
+    return `<div class="card" style="margin-bottom:12px;padding:16px;${pick ? `border-left:3px solid ${pickColor}` : ''}">
       <!-- Header -->
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <span style="font-size:1.1rem">${sportIcon[sport]||'🏟'}</span>
         <span style="font-weight:800;font-size:.95rem">${m.teamA} vs ${m.teamB}</span>
-        <span style="margin-left:auto;background:${winColor}22;color:${winColor};border-radius:20px;padding:3px 12px;font-size:.75rem;font-weight:800">
-          🏆 ${winnerTeam} · ${winnerProb}%
+        <span style="margin-left:auto;background:${winColor}22;color:${winColor};border-radius:20px;padding:3px 12px;font-size:.73rem;font-weight:800">
+          🤖 IA: ${winnerTeam} · ${winnerProb}%
         </span>
       </div>
 
+      <!-- Pick seleccionado — prominente -->
+      ${pick ? `
+      <div style="background:${pickColor}18;border:1.5px solid ${pickColor}55;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+        <div style="font-size:1.6rem">${pickIcon}</div>
+        <div style="flex:1">
+          <div style="font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:1px">TU SELECCIÓN</div>
+          <div style="font-size:1.05rem;font-weight:900;color:${pickColor}">${pickName}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:2rem;font-weight:900;color:${pickColor}">${pickProb}%</div>
+          <div style="font-size:.68rem;color:var(--muted)">probabilidad</div>
+        </div>
+        ${pickMatchIA
+          ? `<div style="background:#00e67622;color:var(--green);border:1px solid var(--green);border-radius:6px;padding:4px 8px;font-size:.7rem;font-weight:800">✅ IA coincide</div>`
+          : `<div style="background:#ff980022;color:var(--orange);border:1px solid var(--orange);border-radius:6px;padding:4px 8px;font-size:.7rem;font-weight:800">⚠️ IA prefiere ${winnerTeam}</div>`}
+      </div>` : `
+      <div style="background:#1a1a1a;border:1.5px dashed #333;border-radius:8px;padding:10px;text-align:center;margin-bottom:12px;font-size:.8rem;color:var(--muted)">
+        ☝️ Selecciona un ganador arriba para ver su probabilidad
+      </div>`}
+
       <!-- Barra de probabilidades -->
-      <div style="display:flex;border-radius:8px;overflow:hidden;height:32px;font-size:.78rem;font-weight:800">
-        <div style="width:${wA}%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;min-width:${pA>8?'0':'0'}px;transition:.5s">
+      <div style="display:flex;border-radius:8px;overflow:hidden;height:28px;font-size:.75rem;font-weight:800">
+        <div style="width:${wA}%;background:${pick==='home'?'var(--blue)':'#1e3a5f'};display:flex;align-items:center;justify-content:center;color:#fff;transition:.5s;outline:${pick==='home'?'2px solid #64b5f6':'none'}">
           ${pA > 10 ? pA + '%' : ''}
         </div>
-        ${pD > 0 ? `<div style="width:${wD}%;background:#334;display:flex;align-items:center;justify-content:center;color:var(--muted);transition:.5s">${pD > 8 ? pD+'%' : ''}</div>` : ''}
-        <div style="width:${wB}%;background:var(--orange);display:flex;align-items:center;justify-content:center;color:#fff;transition:.5s">
+        ${pD > 0 ? `<div style="width:${wD}%;background:${pick==='draw'?'#555':'#222'};display:flex;align-items:center;justify-content:center;color:var(--muted);transition:.5s">${pD > 8 ? pD+'%' : ''}</div>` : ''}
+        <div style="width:${wB}%;background:${pick==='away'?'var(--orange)':'#3a1f0d'};display:flex;align-items:center;justify-content:center;color:#fff;transition:.5s">
           ${pB > 10 ? pB + '%' : ''}
         </div>
       </div>
-      <!-- Etiquetas -->
-      <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);margin-top:4px">
-        <span style="color:var(--blue);font-weight:700">${m.teamA}</span>
-        ${pD > 0 ? '<span>Empate</span>' : ''}
-        <span style="color:var(--orange);font-weight:700">${m.teamB}</span>
+      <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-top:3px">
+        <span style="color:${pick==='home'?'var(--blue)':'var(--muted)'};font-weight:700">${m.teamA}</span>
+        ${pD > 0 ? `<span style="color:${pick==='draw'?'#aaa':'var(--muted)'}">Empate</span>` : ''}
+        <span style="color:${pick==='away'?'var(--orange)':'var(--muted)'};font-weight:700">${m.teamB}</span>
       </div>
 
       ${extras}
 
       ${bestBet.bet ? `
-      <div style="margin-top:10px;background:#0d2137;border-radius:8px;padding:10px 12px;font-size:.82rem">
-        <span style="color:var(--green);font-weight:700">💡 Apuesta:</span>
+      <div style="margin-top:10px;background:#0d2137;border-radius:8px;padding:8px 12px;font-size:.8rem">
+        <span style="color:var(--green);font-weight:700">💡 Apuesta IA:</span>
         <span> ${bestBet.bet}</span>
         <span style="color:var(--muted)"> · ${bestBet.conf}% confianza</span>
       </div>` : ''}
