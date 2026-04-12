@@ -19,14 +19,20 @@ from scrapers.sportradar import SportradarScraper          # ← Soccer
 
 # NBA y MLB scrapers — opcionales (no crashean si faltan los archivos)
 try:
-    from scrapers.sportradar_nba import SportradarNBAScraper
+    try:
+        from scrapers.sportradar_nba import SportradarNBAScraper   # subcarpeta
+    except ImportError:
+        from sportradar_nba import SportradarNBAScraper            # raíz
     _NBA_OK = True
 except ImportError:
     _NBA_OK = False
     print("[Server] ⚠️ sportradar_nba.py no encontrado — NBA deshabilitado")
 
 try:
-    from scrapers.sportradar_mlb import SportradarMLBScraper
+    try:
+        from scrapers.sportradar_mlb import SportradarMLBScraper   # subcarpeta
+    except ImportError:
+        from sportradar_mlb import SportradarMLBScraper            # raíz
     _MLB_OK = True
 except ImportError:
     _MLB_OK = False
@@ -613,7 +619,7 @@ def glai_parlay():
                     return round(sum(s)/len(s), 1) if s else d
                 val_a = _avg(hist_a, val_a)
                 val_b = _avg(hist_b, val_b)
-                pred  = glai.predict_nba(val_a, val_b)
+                pred  = glai.predict_nba(val_a, val_b, hist_a=hist_a, hist_b=hist_b)
                 bet   = glai.ai_bet_nba(pred, team_a, team_b, hist_a, hist_b)
                 entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
                 if pick == 'home':   best_p = pred.get('pctA', 50) / 100
@@ -640,7 +646,7 @@ def glai_parlay():
                 rag_a  = _wgt_opp(hist_a)
                 rag_b  = _wgt_opp(hist_b)
                 h2h_p  = db.get_h2h_results(team_a, team_b, limit=5)
-                pred   = glai.predict_mlb(val_a, val_b, home_rag=rag_a, away_rag=rag_b, h2h=h2h_p)
+                pred   = glai.predict_mlb(val_a, val_b, home_rag=rag_a, away_rag=rag_b, h2h=h2h_p, hist_a=hist_a, hist_b=hist_b)
                 bet    = glai.ai_bet_mlb(pred, team_a, team_b, hist_a, hist_b, h2h=h2h_p)
                 entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
                 if pick == 'home':   best_p = pred.get('pctA', 50) / 100
@@ -1128,7 +1134,8 @@ def glai_analyze():
             prediction = glai.predict_nba(
                 real_ppg_a, real_ppg_b,
                 home_apg=real_apg_a, away_apg=real_apg_b,
-                h2h=h2h, confidence_score=conf_sc
+                h2h=h2h, confidence_score=conf_sc,
+                hist_a=hist_a, hist_b=hist_b
             )
             bet = glai.ai_bet_nba(prediction, team_a, team_b, hist_a, hist_b, h2h=h2h)
             try:
@@ -1187,7 +1194,8 @@ def glai_analyze():
             prediction = glai.predict_mlb(
                 real_rpg_a, real_rpg_b,
                 home_rag=real_rag_a, away_rag=real_rag_b,
-                h2h=h2h, confidence_score=conf_sc
+                h2h=h2h, confidence_score=conf_sc,
+                hist_a=hist_a, hist_b=hist_b
             )
             bet = glai.ai_bet_mlb(prediction, team_a, team_b, hist_a, hist_b, h2h=h2h)
             try:
