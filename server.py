@@ -691,6 +691,90 @@ def team_stats():
 
 
 # ════════════════════════════════════════════════════════════════
+# RUTA — DIAGNÓSTICO ESPN NHL
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/debug/nhl')
+@require_admin
+def debug_nhl():
+    """
+    Diagnóstico NHL: muestra exactamente qué devuelve ESPN antes y después de filtrar.
+    Solo visible para admin. Accede a /api/debug/nhl desde el navegador.
+    """
+    import requests as req
+    from datetime import datetime, timezone
+
+    # Probar NHL API oficial primero
+    url_nhle = 'https://api-web.nhle.com/v1/scoreboard/now'
+    url_espn = 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard'
+    nhle_ok = False; espn_ok = False; nhle_count = 0; espn_count = 0
+    try:
+        rn = req.get(url_nhle, timeout=8)
+        nhle_ok = rn.ok
+        nhle_count = len(rn.json().get('games', [])) if rn.ok else 0
+    except Exception as en:
+        nhle_ok = False
+    try:
+        re2 = req.get(url_espn, timeout=8)
+        raw_status = re2.status_code
+        espn_ok = re2.ok
+        espn_count = len(re2.json().get('events', [])) if re2.ok else 0
+        events = re2.json().get('events', []) if re2.ok else []
+    except Exception as e:
+        raw_status = 0
+        events = []
+    url = url_nhle if nhle_ok else url_espn
+
+    # Parsear igual que espn.py
+    parsed = espn.get_nhl_matches()
+
+    # Ver cuáles se filtran como "finales"
+    FINAL_STATUSES = {
+        'status_final', 'final', 'post', 'closed', 'complete',
+        'finished', 'ended', 'ft', 'full-time',
+        'status_full_time', 'status_postponed', 'status_canceled',
+        'canceled', 'postponed', 'abandoned',
+    }
+    now_ts = datetime.now(timezone.utc).timestamp()
+
+    detail = []
+    for m in parsed:
+        s = (m.get('status') or '').lower().replace(' ', '_')
+        is_final_status = s in FINAL_STATUSES or any(
+            tok in s for tok in ('final','finish','ended','closed','complete'))
+        has_score = m.get('homeScore') not in ('', None) and m.get('awayScore') not in ('', None)
+        time_filter = False
+        age_hours = None
+        if has_score and m.get('date'):
+            try:
+                mt = datetime.fromisoformat(m['date'].replace('Z', '+00:00')).timestamp()
+                age_hours = round((now_ts - mt) / 3600, 1)
+                time_filter = age_hours > 2
+            except Exception:
+                pass
+        detail.append({
+            'match':          f"{m['homeTeam']} vs {m['awayTeam']}",
+            'status':         m.get('status'),
+            'date':           m.get('date'),
+            'score':          f"{m.get('homeScore','')} - {m.get('awayScore','')}",
+            'age_hours':      age_hours,
+            'filtered_by':    ('status' if is_final_status else ('time' if time_filter else 'NOT_FILTERED')),
+            'would_show':     not (is_final_status or time_filter),
+        })
+
+    visible = [d for d in detail if d['would_show']]
+    return jsonify({
+        'ok':            True,
+        'nhle_api':      {'ok': nhle_ok, 'games': nhle_count},
+        'espn_api':      {'ok': espn_ok, 'games': espn_count, 'http': raw_status},
+        'source_used':   'nhle' if nhle_ok and nhle_count > 0 else 'espn',
+        'parsed':        len(parsed),
+        'visible':       len(visible),
+        'reason_hidden': f'{len(parsed) - len(visible)} partido(s) filtrados como terminados',
+        'detail':        detail,
+    })
+
+
+# ════════════════════════════════════════════════════════════════
 # RUTAS — SPORTRADAR NBA
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/nba/sportradar/status')

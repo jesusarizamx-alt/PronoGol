@@ -100,15 +100,115 @@ class ESPNScraper:
                 results.append(d)
         return results
 
-    # ─── NHL ──────────────────────────────────────────────────────
+    # ─── NHL (API oficial NHL.com — sin key, gratis) ─────────────
     def get_nhl_matches(self, date_str=None):
-        """Partidos NHL de hoy (o de una fecha específica)."""
-        results = []
+        """
+        Partidos NHL de hoy usando NHL API oficial (api-web.nhle.com).
+        Fallback a ESPN si falla.
+        date_str: 'YYYY-MM-DD' o None para hoy.
+        """
+        results = self._get_nhl_from_nhle(date_str)
+        if results:
+            return results
+        # Fallback: ESPN
+        fallback = []
         for ev in self._fetch_scoreboard('hockey', 'nhl', date_str):
             d = self._event_dict(ev, 'nhl', sport='nhl')
             if d:
-                results.append(d)
-        return results
+                fallback.append(d)
+        return fallback
+
+    def _get_nhl_from_nhle(self, date_str=None):
+        """
+        NHL API oficial: https://api-web.nhle.com/v1/scoreboard/now
+        Devuelve partidos del día en formato estándar del sistema.
+        """
+        NHL_API = 'https://api-web.nhle.com/v1'
+        try:
+            if date_str:
+                # /v1/schedule/YYYY-MM-DD
+                url = f'{NHL_API}/schedule/{date_str}'
+                r = self.session.get(url, timeout=8)
+                if not r.ok:
+                    return []
+                data = r.json()
+                game_week = data.get('gameWeek', [])
+                games = []
+                for day in game_week:
+                    if date_str in day.get('date', ''):
+                        games = day.get('games', [])
+                        break
+            else:
+                # /v1/scoreboard/now — scoreboard en tiempo real
+                url = f'{NHL_API}/scoreboard/now'
+                r = self.session.get(url, timeout=8)
+                if not r.ok:
+                    return []
+                data = r.json()
+                games = data.get('games', [])
+
+            results = []
+            for g in games:
+                home = g.get('homeTeam', {})
+                away = g.get('awayTeam', {})
+                hn = home.get('name', {})
+                an = away.get('name', {})
+                # El API NHL retorna nombre como objeto {default, fr} o string
+                home_name = hn.get('default', '') if isinstance(hn, dict) else str(hn)
+                away_name = an.get('default', '') if isinstance(an, dict) else str(an)
+                # Fallback: usar placeName + teamName
+                if not home_name:
+                    home_name = (home.get('placeName', {}).get('default', '') + ' ' +
+                                 home.get('teamName', {}).get('default', '')).strip()
+                if not away_name:
+                    away_name = (away.get('placeName', {}).get('default', '') + ' ' +
+                                 away.get('teamName', {}).get('default', '')).strip()
+
+                # Estado del juego
+                state = g.get('gameState', '')   # FUT, PRE, LIVE, CRIT, FINAL, OFF
+                if state in ('FINAL', 'OFF'):
+                    status = 'STATUS_FINAL'
+                elif state in ('LIVE', 'CRIT'):
+                    status = 'STATUS_IN_PROGRESS'
+                else:
+                    status = 'STATUS_SCHEDULED'
+
+                # Scores
+                home_score = home.get('score', '')
+                away_score = away.get('score', '')
+                if home_score == 0 and state not in ('LIVE', 'CRIT', 'FINAL', 'OFF'):
+                    home_score = ''
+                if away_score == 0 and state not in ('LIVE', 'CRIT', 'FINAL', 'OFF'):
+                    away_score = ''
+
+                # Logos
+                home_logo = home.get('logo', '') or f"https://assets.nhle.com/logos/nhl/svg/{home.get('abbrev','')}_light.svg"
+                away_logo = away.get('logo', '') or f"https://assets.nhle.com/logos/nhl/svg/{away.get('abbrev','')}_light.svg"
+
+                if not home_name or not away_name:
+                    continue
+
+                results.append({
+                    'id':        str(g.get('id', '')),
+                    'name':      f"{home_name} vs {away_name}",
+                    'date':      g.get('startTimeUTC', ''),
+                    'status':    status,
+                    'league':    'nhl',
+                    'sport':     'nhl',
+                    'homeTeam':  home_name,
+                    'awayTeam':  away_name,
+                    'homeScore': '' if home_score == '' else str(home_score),
+                    'awayScore': '' if away_score == '' else str(away_score),
+                    'homeAbbr':  home.get('abbrev', ''),
+                    'awayAbbr':  away.get('abbrev', ''),
+                    'homeLogo':  home_logo,
+                    'awayLogo':  away_logo,
+                    'source':    'nhle',
+                })
+            return results
+        except Exception as e:
+            print(f'[NHL API error] {e}')
+            return []
 
     # ─── Todos los deportes ───────────────────────────────────────
     def get_all_today(self):
@@ -254,37 +354,81 @@ class ESPNScraper:
                 pass
             time.sleep(0.15)
 
-        # ── NHL histórico ─────────────────────────────────────────
+        # ── NHL histórico — usa NHL API oficial (nhle.com) con fallback ESPN ──
+        NHL_API = 'https://api-web.nhle.com/v1'
         for date_str in dates:
+            learned_this_date = False
+            # Intento 1: NHL API oficial /v1/schedule/YYYY-MM-DD
             try:
-                url = f"{ESPN_BASE}/hockey/nhl/scoreboard"
-                r   = self.session.get(url, params={'dates': date_str, 'limit': 50}, timeout=6)
-                if r.ok:
-                    for ev in (r.json().get('events') or []):
-                        comp = ev.get('competitions', [{}])[0]
-                        st   = comp.get('status', {}).get('type', {}).get('name', '')
-                        if 'Final' not in st and 'STATUS_FINAL' not in st:
+                url_nhl = f'{NHL_API}/schedule/{date_str}'
+                rn = self.session.get(url_nhl, timeout=6)
+                if rn.ok:
+                    game_week = rn.json().get('gameWeek', [])
+                    for day in game_week:
+                        if date_str not in day.get('date', ''):
                             continue
-                        competitors = comp.get('competitors', [])
-                        if len(competitors) < 2:
-                            continue
-                        home, away = self._parse_competitors(competitors)
-                        hg = home.get('score', '')
-                        ag = away.get('score', '')
-                        if hg == '' or ag == '':
-                            continue
-                        try:
-                            hg, ag = int(float(hg)), int(float(ag))
-                        except (ValueError, TypeError):
-                            continue
-                        hn = home.get('team', {}).get('displayName', '')
-                        an = away.get('team', {}).get('displayName', '')
-                        if glai and hn and an:
-                            glai.learn('nhl', 'nhl', hn, an, hg, ag,
-                                       source='espn_nhl', event_id=f'espn_nhl_{ev.get("id")}')
-                            total += 1
+                        for g in day.get('games', []):
+                            state = g.get('gameState', '')
+                            if state not in ('FINAL', 'OFF'):
+                                continue
+                            home = g.get('homeTeam', {})
+                            away = g.get('awayTeam', {})
+                            hg = home.get('score', '')
+                            ag = away.get('score', '')
+                            if hg == '' or ag == '':
+                                continue
+                            try:
+                                hg, ag = int(hg), int(ag)
+                            except (ValueError, TypeError):
+                                continue
+                            # Nombre completo: place + team name
+                            hn_p = home.get('placeName', {})
+                            hn_t = home.get('teamName', {})
+                            an_p = away.get('placeName', {})
+                            an_t = away.get('teamName', {})
+                            hn = ((hn_p.get('default','') if isinstance(hn_p,dict) else str(hn_p)) + ' ' +
+                                  (hn_t.get('default','') if isinstance(hn_t,dict) else str(hn_t))).strip()
+                            an = ((an_p.get('default','') if isinstance(an_p,dict) else str(an_p)) + ' ' +
+                                  (an_t.get('default','') if isinstance(an_t,dict) else str(an_t))).strip()
+                            if glai and hn and an:
+                                glai.learn('nhl', 'nhl', hn, an, hg, ag,
+                                           source='nhle', event_id=f'nhle_{g.get("id","")}')
+                                total += 1
+                                learned_this_date = True
             except Exception:
                 pass
+
+            # Intento 2: fallback ESPN si NHL API no dio datos
+            if not learned_this_date:
+                try:
+                    url = f"{ESPN_BASE}/hockey/nhl/scoreboard"
+                    r   = self.session.get(url, params={'dates': date_str, 'limit': 50}, timeout=6)
+                    if r.ok:
+                        for ev in (r.json().get('events') or []):
+                            comp = ev.get('competitions', [{}])[0]
+                            st   = comp.get('status', {}).get('type', {}).get('name', '')
+                            if 'Final' not in st and 'STATUS_FINAL' not in st:
+                                continue
+                            competitors = comp.get('competitors', [])
+                            if len(competitors) < 2:
+                                continue
+                            home, away = self._parse_competitors(competitors)
+                            hg = home.get('score', '')
+                            ag = away.get('score', '')
+                            if hg == '' or ag == '':
+                                continue
+                            try:
+                                hg, ag = int(float(hg)), int(float(ag))
+                            except (ValueError, TypeError):
+                                continue
+                            hn = home.get('team', {}).get('displayName', '')
+                            an = away.get('team', {}).get('displayName', '')
+                            if glai and hn and an:
+                                glai.learn('nhl', 'nhl', hn, an, hg, ag,
+                                           source='espn_nhl', event_id=f'espn_nhl_{ev.get("id")}')
+                                total += 1
+                except Exception:
+                    pass
             time.sleep(0.15)
 
         if on_progress:
