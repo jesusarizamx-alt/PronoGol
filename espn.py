@@ -104,15 +104,29 @@ class ESPNScraper:
     def get_nhl_matches(self, date_str=None):
         """
         Partidos NHL de hoy usando NHL API oficial (api-web.nhle.com).
-        Fallback a ESPN si falla.
+        Fallback a ESPN con fecha explícita en formato YYYYMMDD.
         date_str: 'YYYY-MM-DD' o None para hoy.
         """
+        from datetime import datetime, timezone
+        today_dash  = date_str or datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        today_nodash = today_dash.replace('-', '')  # ESPN usa YYYYMMDD
+
+        # Intento 1: NHL API oficial
         results = self._get_nhl_from_nhle(date_str)
         if results:
             return results
-        # Fallback: ESPN
+
+        # Intento 2: ESPN con fecha explícita YYYYMMDD
         fallback = []
-        for ev in self._fetch_scoreboard('hockey', 'nhl', date_str):
+        for ev in self._fetch_scoreboard('hockey', 'nhl', today_nodash):
+            d = self._event_dict(ev, 'nhl', sport='nhl')
+            if d:
+                fallback.append(d)
+        if fallback:
+            return fallback
+
+        # Intento 3: ESPN sin fecha (por si acaso)
+        for ev in self._fetch_scoreboard('hockey', 'nhl', None):
             d = self._event_dict(ev, 'nhl', sport='nhl')
             if d:
                 fallback.append(d)
