@@ -533,10 +533,12 @@ def glai_parlay():
         val_a  = calc_auto_xg(team_a, sport, _def_a)
         val_b  = calc_auto_xg(team_b, sport, _def_b)
 
+        pick  = m.get('pick', '')   # 'home' | 'away' | 'draw' | ''
         entry = {
             'teamA': team_a, 'teamB': team_b,
             'sport': sport,  'league': league,
             'valA': val_a,   'valB': val_b,
+            'pick': pick,
         }
 
         try:
@@ -551,7 +553,9 @@ def glai_parlay():
                 pred  = glai.predict_nba(val_a, val_b)
                 bet   = glai.ai_bet_nba(pred, team_a, team_b, hist_a, hist_b)
                 entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
-                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
+                if pick == 'home':   best_p = pred.get('pctA', 50) / 100
+                elif pick == 'away': best_p = pred.get('pctB', 50) / 100
+                else:                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
 
             elif sport == 'mlb':
                 hist_a = glai.team_history(team_a, limit=8)
@@ -576,7 +580,9 @@ def glai_parlay():
                 pred   = glai.predict_mlb(val_a, val_b, home_rag=rag_a, away_rag=rag_b, h2h=h2h_p)
                 bet    = glai.ai_bet_mlb(pred, team_a, team_b, hist_a, hist_b, h2h=h2h_p)
                 entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
-                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
+                if pick == 'home':   best_p = pred.get('pctA', 50) / 100
+                elif pick == 'away': best_p = pred.get('pctB', 50) / 100
+                else:                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
 
             elif sport == 'nhl':
                 hist_a = glai.team_history(team_a, limit=8)
@@ -601,7 +607,9 @@ def glai_parlay():
                 pred   = glai.predict_nhl(val_a, val_b, home_gag=gag_a, away_gag=gag_b, h2h=h2h_p)
                 bet    = glai.ai_bet_nhl(pred, team_a, team_b, hist_a, hist_b, h2h=h2h_p)
                 entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
-                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
+                if pick == 'home':   best_p = pred.get('pctA', 50) / 100
+                elif pick == 'away': best_p = pred.get('pctB', 50) / 100
+                else:                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
 
             else:  # soccer
                 hist_a = glai.team_history(team_a, limit=8)
@@ -616,7 +624,11 @@ def glai_parlay():
                                'corners': corners, 'histA': hist_a, 'histB': hist_b})
                 pA = pred.get('pctA', 33)
                 pB = pred.get('pctB', 33)
-                best_p = max(pA, pB) / 100
+                pD = pred.get('pctDraw', 33)
+                if pick == 'home':   best_p = pA / 100
+                elif pick == 'away': best_p = pB / 100
+                elif pick == 'draw': best_p = pD / 100
+                else:                best_p = max(pA, pB) / 100
 
             combined_prob *= best_p
 
