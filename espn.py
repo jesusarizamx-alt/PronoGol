@@ -20,7 +20,13 @@ class ESPNScraper:
     def __init__(self, keys=None):
         self.keys = keys or {}
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'Mozilla/5.0'})
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Origin': 'https://www.espn.com',
+            'Referer': 'https://www.espn.com/',
+        })
 
     # ─── Helpers ──────────────────────────────────────────────────
     def _parse_competitors(self, competitors):
@@ -58,11 +64,11 @@ class ESPNScraper:
 
     def _fetch_scoreboard(self, sport_path, league_id, date_str=None):
         url    = f"{ESPN_BASE}/{sport_path}/{league_id}/scoreboard"
-        params = {}
+        params = {'limit': 50}
         if date_str:
             params['dates'] = date_str
         try:
-            r = self.session.get(url, params=params, timeout=8)
+            r = self.session.get(url, params=params, timeout=10)
             if not r.ok:
                 return []
             return r.json().get('events') or []
