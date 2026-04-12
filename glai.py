@@ -1103,6 +1103,299 @@ class GLAIEngine:
             'streakB':         streak_b,
         }
 
+    # ─── NHL — Predicción v1 ──────────────────────────────────────
+    def predict_nhl(self, home_gpg, away_gpg,
+                    home_gag=None, away_gag=None, h2h=None,
+                    confidence_score=0):
+        """
+        Predicción NHL — Poisson sobre goles por partido.
+        home_gpg / away_gpg : goles anotados por partido (ponderados con decay)
+        home_gag / away_gag : goles PERMITIDOS (proxy GAA del portero)
+        h2h                 : lista de enfrentamientos directos
+
+        Particularidades NHL:
+        - Sin empate en tiempo regular → hay OT/shootout
+        - Promedio goles totales NHL: ~5.8-6.2 por partido
+        - Ventaja local: +0.15 goles aprox
+        - Líneas O/U comunes: 5.5 / 6.0 / 6.5
+        """
+        HOME_ADV = 0.15
+        max_g    = 12
+
+        # ── Proyección cruzada: ataque vs. portero rival (GAA) ────────
+        if home_gag and away_gag:
+            cross_home = (home_gpg + away_gag) / 2
+            cross_away = (away_gpg + home_gag) / 2
+        else:
+            cross_home = home_gpg
+            cross_away = away_gpg
+
+        adj_home = max(0.5, cross_home + HOME_ADV)
+        adj_away = max(0.5, cross_away)
+
+        # ── Blend H2H ─────────────────────────────────────────────────
+        h2h_used = {}
+        if h2h and len(h2h) >= 3:
+            h2h_totals = [r['home_goals'] + r['away_goals'] for r in h2h]
+            h2h_avg    = sum(h2h_totals) / len(h2h_totals)
+            blend      = 0.22
+            ratio      = ((adj_home + adj_away) * (1 - blend) + h2h_avg * blend) / (adj_home + adj_away)
+            adj_home  *= ratio
+            adj_away  *= ratio
+            h2h_used   = {'n': len(h2h), 'avgGoals': round(h2h_avg, 2)}
+
+        # ── Probabilidades Poisson ────────────────────────────────────
+        p_home = p_away = p_reg_tie = 0.0
+        for h in range(max_g + 1):
+            for a in range(max_g + 1):
+                p = self._poisson(adj_home, h) * self._poisson(adj_away, a)
+                if   h > a: p_home     += p
+                elif h < a: p_away     += p
+                else:       p_reg_tie  += p
+
+        # OT/SO — en tiempo extra la ventaja local es mínima (50/50 aprox)
+        # En realidad ~51.5% local, 48.5% visitante en OT
+        p_home_ot = p_reg_tie * 0.515
+        p_away_ot = p_reg_tie * 0.485
+        p_home_ml = p_home + p_home_ot   # Moneyline (incluye OT)
+        p_away_ml = p_away + p_away_ot
+
+        tot = p_home_ml + p_away_ml or 1
+        p_home_ml /= tot
+        p_away_ml /= tot
+
+        total = adj_home + adj_away
+
+        def _over(line):
+            return sum(
+                self._poisson(adj_home, h) * self._poisson(adj_away, a)
+                for h in range(max_g+1) for a in range(max_g+1) if h+a > line
+            )
+
+        over_5_5  = _over(5.5)
+        over_6_0  = _over(6.0)
+        over_6_5  = _over(6.5)
+        over_7_5  = _over(7.5)
+
+        # ── Puck Line (-1.5) — ganar por 2+ goles ────────────────────
+        p_pl_home = sum(
+            self._poisson(adj_home, h) * self._poisson(adj_away, a)
+            for h in range(max_g+1) for a in range(max_g+1) if h - a >= 2
+        )
+        p_pl_away = sum(
+            self._poisson(adj_home, h) * self._poisson(adj_away, a)
+            for h in range(max_g+1) for a in range(max_g+1) if a - h >= 2
+        )
+
+        # ── Probabilidad de OT/SO ─────────────────────────────────────
+        p_ot = round(p_reg_tie * 100)
+
+        # ── 1er Período (P1) ──────────────────────────────────────────
+        P1_FACTOR = 0.305   # ~30.5% de los goles ocurren en el 1er período
+        p1_home   = round(adj_home * P1_FACTOR, 2)
+        p1_away   = round(adj_away * P1_FACTOR, 2)
+        p1_total  = p1_home + p1_away
+        p1_nrfp   = self._poisson(p1_home, 0) * self._poisson(p1_away, 0)
+        p1_any    = 1 - p1_nrfp
+        p1_ou_ln  = round(p1_total / 0.5) * 0.5
+
+        over_p1_15 = sum(
+            self._poisson(p1_home, h) * self._poisson(p1_away, a)
+            for h in range(7) for a in range(7) if h+a > 1.5
+        )
+
+        # ── Proyección por período ────────────────────────────────────
+        p_factors  = [0.305, 0.335, 0.360]   # P1 / P2 / P3 (P3 más goles, equipos presionan)
+        periods    = []
+        for i, pf in enumerate(p_factors):
+            ph  = round(adj_home * pf, 2)
+            pa  = round(adj_away * pf, 2)
+            pt  = round(ph + pa, 2)
+            pln = round(pt / 0.5) * 0.5
+            pov = min(74, max(26, round(50 + (pt - pln) * 18)))
+            periods.append({'period': i+1, 'projHome': ph, 'projAway': pa,
+                            'projTotal': pt, 'ouLine': pln, 'overPct': pov})
+
+        # ── Matriz de marcadores (top 10) ─────────────────────────────
+        matrix = []
+        for h in range(10):
+            for a in range(10):
+                p = self._poisson(adj_home, h) * self._poisson(adj_away, a)
+                matrix.append({'h': h, 'a': a, 'p': round(p, 4)})
+        matrix.sort(key=lambda x: x['p'], reverse=True)
+
+        return {
+            'pctA':         round(p_home_ml * 100),
+            'pctB':         round(p_away_ml * 100),
+            'pOT':          p_ot,
+            'projHome':     round(adj_home, 2),
+            'projAway':     round(adj_away, 2),
+            'rawGpgHome':   round(home_gpg, 2),
+            'rawGpgAway':   round(away_gpg, 2),
+            'gagHome':      round(home_gag, 2) if home_gag else None,
+            'gagAway':      round(away_gag, 2) if away_gag else None,
+            'total':        round(total, 2),
+            'over5_5':      round(over_5_5 * 100),
+            'over6_0':      round(over_6_0 * 100),
+            'over6_5':      round(over_6_5 * 100),
+            'over7_5':      round(over_7_5 * 100),
+            'puckLineHome': round(p_pl_home * 100),
+            'puckLineAway': round(p_pl_away * 100),
+            'period1': {
+                'projHome':  p1_home,   'projAway': p1_away,
+                'projTotal': round(p1_total, 2),
+                'ouLine':    p1_ou_ln,  'scoreAny': round(p1_any * 100),
+                'nrfp':      round(p1_nrfp * 100),
+                'over1_5':   round(over_p1_15 * 100),
+            },
+            'periods':       periods,
+            'matrix':        matrix[:10],
+            'h2h':           h2h_used,
+            'hasCrossStats': bool(home_gag and away_gag),
+            'dataQuality':   confidence_score,
+        }
+
+    def ai_bet_nhl(self, pred, team_a, team_b, hist_a=None, hist_b=None, h2h=None):
+        """
+        Recomendación de apuesta NHL v1.
+        Moneyline, Puck Line, O/U, 1er Período, NRFP y señales de historial real.
+        """
+        hist_a = hist_a or []
+        hist_b = hist_b or []
+        pA     = pred.get('pctA', 50)
+        pB     = pred.get('pctB', 50)
+        p_ot   = pred.get('pOT', 20)
+        total  = pred.get('total', 6.0)
+        ov55   = pred.get('over5_5', 50)
+        ov65   = pred.get('over6_5', 50)
+        pl_h   = pred.get('puckLineHome', 35)
+        pl_a   = pred.get('puckLineAway', 35)
+        p1     = pred.get('period1', {})
+
+        def wgt_rate(arr, fn, decay=0.82):
+            if not arr: return 0.5
+            tw = tv = 0.0
+            for i, m in enumerate(arr):
+                w = decay**i; tw += w; tv += w*(1.0 if fn(m) else 0.0)
+            return tv/tw if tw else 0.5
+
+        win_a      = wgt_rate(hist_a, lambda m: m['result']=='G')
+        win_b      = wgt_rate(hist_b, lambda m: m['result']=='G')
+        home_a     = [m for m in hist_a if m.get('isHome', True)]
+        away_b     = [m for m in hist_b if not m.get('isHome', True)]
+        home_win_a = wgt_rate(home_a, lambda m: m['result']=='G') if home_a else win_a
+        away_win_b = wgt_rate(away_b, lambda m: m['result']=='G') if away_b else win_b
+
+        # Tendencia goles (para O/U)
+        wgt_total_a = self._weighted_avg(hist_a,'myG') + self._weighted_avg(hist_a,'oppG')
+        wgt_total_b = self._weighted_avg(hist_b,'myG') + self._weighted_avg(hist_b,'oppG')
+        hist_avg_total = (wgt_total_a + wgt_total_b) / 2 if (hist_a and hist_b) else total
+
+        # H2H
+        h2h_info = {}
+        if h2h and len(h2h) >= 3:
+            wins_a = sum(
+                1 for r in h2h
+                if (team_a[:6].lower() in r['home_team'].lower() and r['home_goals'] > r['away_goals'])
+                or (team_a[:6].lower() in r['away_team'].lower() and r['away_goals'] > r['home_goals'])
+            )
+            goals = [r['home_goals']+r['away_goals'] for r in h2h]
+            h2h_info = {
+                'n': len(h2h),
+                'winRateA': round(wins_a/len(h2h)*100),
+                'avgGoals': round(sum(goals)/len(goals), 1),
+            }
+
+        n_total    = len(hist_a) + len(hist_b)
+        conf_score = min(90, round((min(n_total,20)/20)*60
+                         + (10 if h2h_info else 0)
+                         + (10 if len(hist_a)>=3 and len(hist_b)>=3 else 0)
+                         + (10 if pred.get('hasCrossStats') else 0)))
+
+        bets = []
+
+        # ── Moneyline ─────────────────────────────────────────────────
+        if home_win_a >= 0.62 and len(home_a) >= 3:
+            bets.append({'bet': f'{team_a} Gana (ML — Local)', 'conf': min(78, round(home_win_a*100)+3),
+                         'reason': f'{team_a} gana {round(home_win_a*100)}% en casa · spread proyectado {pred.get("projHome",3.0):.2f} vs {pred.get("projAway",3.0):.2f}'})
+        elif pA >= 60:
+            bets.append({'bet': f'{team_a} Gana (Moneyline)', 'conf': min(76, pA),
+                         'reason': f'{pA}% probabilidad · GPG {pred.get("projHome"):.2f} vs {pred.get("projAway"):.2f}'})
+
+        if away_win_b >= 0.58 and len(away_b) >= 3:
+            bets.append({'bet': f'{team_b} Gana (ML — Visitante)', 'conf': min(74, round(away_win_b*100)),
+                         'reason': f'{team_b} gana {round(away_win_b*100)}% de visita — portería sólida'})
+        elif pB >= 60:
+            bets.append({'bet': f'{team_b} Gana (Moneyline)', 'conf': min(74, pB),
+                         'reason': f'{team_b} {pB}% — visitante en buena forma'})
+
+        # ── Puck Line ─────────────────────────────────────────────────
+        if pl_h >= 52:
+            bets.append({'bet': f'{team_a} -1.5 (Puck Line)', 'conf': min(70, pl_h),
+                         'reason': f'{pl_h}% de ganar por 2+ goles · GPG {pred.get("projHome"):.2f} vs GAA rival {pred.get("gagAway") or "?"}'})
+        elif pl_a >= 52:
+            bets.append({'bet': f'{team_b} +1.5 (Puck Line)', 'conf': min(70, pl_a),
+                         'reason': f'{pl_a}% de mantenerse a ≤1 gol de diferencia'})
+
+        # ── O/U ───────────────────────────────────────────────────────
+        if ov55 >= 62:
+            bets.append({'bet': 'Más de 5.5 goles', 'conf': min(74, ov55),
+                         'reason': f'{ov55}% Over 5.5 · total proyectado {total:.2f} · historial ponderado {hist_avg_total:.1f}'})
+        elif ov65 <= 36:
+            bets.append({'bet': 'Menos de 6.5 goles', 'conf': min(74, 100-ov65),
+                         'reason': f'Solo {ov65}% Over 6.5 — porteros sólidos proyectados'})
+        elif ov65 >= 58:
+            bets.append({'bet': 'Más de 6.5 goles', 'conf': min(72, ov65),
+                         'reason': f'{ov65}% Over 6.5 · ofensivas en racha'})
+
+        # ── 1er Período ───────────────────────────────────────────────
+        nrfp = p1.get('nrfp', 50)
+        if nrfp >= 58:
+            bets.append({'bet': 'NRFP — Sin goles en 1er período', 'conf': min(68, nrfp),
+                         'reason': f'{nrfp}% de que el P1 termine 0-0 — porteros dominantes al inicio'})
+        elif p1.get('scoreAny', 50) >= 72:
+            bets.append({'bet': '1er Período — Alguien Anota', 'conf': min(70, p1.get('scoreAny',50)),
+                         'reason': f'{p1.get("scoreAny")}% de anotar en P1 · total proyectado {p1.get("projTotal","?")}'})
+
+        # ── OT probable ───────────────────────────────────────────────
+        if p_ot >= 28:
+            bets.append({'bet': f'Se Va al Tiempo Extra / Shootout', 'conf': min(65, p_ot),
+                         'reason': f'{p_ot}% de probabilidad de OT/SO — equipos muy parejos'})
+
+        # ── H2H ──────────────────────────────────────────────────────
+        if h2h_info.get('winRateA', 50) >= 70:
+            bets.append({'bet': f'{team_a} Gana (Domina H2H)', 'conf': min(74, h2h_info['winRateA']),
+                         'reason': f'Gana {h2h_info["winRateA"]}% de sus últimos {h2h_info["n"]} duelos directos'})
+
+        if not bets:
+            bets.append({'bet': 'Más de 5.5 goles' if ov55 >= 50 else 'Menos de 5.5 goles',
+                         'conf': max(ov55, 100-ov55, 51),
+                         'reason': f'Total proyectado {total:.2f} goles'})
+
+        bets.sort(key=lambda x: x['conf'], reverse=True)
+
+        narrative = (
+            f"🏒 {team_a} (local) vs {team_b} (visita).\n\n"
+            f"Proyección: {pred.get('projHome'):.2f} – {pred.get('projAway'):.2f} goles (Total {total:.2f}).\n"
+            + (f"GAA cruzado — {team_a}: {pred.get('gagHome')} · {team_b}: {pred.get('gagAway')} goles permitidos.\n"
+               if pred.get('hasCrossStats') else '')
+            + f"Puck Line local: {pl_h}% · OT probable: {p_ot}% · Over 5.5: {ov55}%\n"
+            + (f"H2H: {team_a} domina {h2h_info.get('winRateA')}% · Prom {h2h_info.get('avgGoals')} goles.\n"
+               if h2h_info else '')
+            + f"\n{bets[0]['bet']} ({bets[0]['conf']}%) — {bets[0]['reason']}."
+            f"\n\nℹ️ Análisis orientativo. Apuesta con responsabilidad."
+        )
+        return {
+            'best':            bets[0] if bets else None,
+            'alt':             bets[1] if len(bets) > 1 else None,
+            'narrative':       narrative,
+            'confidenceScore': conf_score,
+            'hasRealData':     len(hist_a) >= 2 or len(hist_b) >= 2,
+            'h2h':             h2h_info,
+            'homeWinA':        round(home_win_a * 100),
+            'awayWinB':        round(away_win_b * 100),
+        }
+
     # ─── Predicciones EN VIVO ─────────────────────────────────────
 
     def predict_live_soccer(self, home_score, away_score, minute, xg_a, xg_b):

@@ -61,7 +61,7 @@ def calc_auto_xg(team, sport='soccer', default=1.4):
     """
     # Normaliza: el frontend manda 'nba'/'mlb' pero la DB guarda 'basketball'/'baseball'
     _SPORT_MAP = {'nba': 'basketball', 'mlb': 'baseball', 'soccer': 'soccer',
-                  'basketball': 'basketball', 'baseball': 'baseball'}
+                  'basketball': 'basketball', 'baseball': 'baseball', 'nhl': 'nhl'}
     sport_db = _SPORT_MAP.get(sport, sport)
 
     try:
@@ -526,10 +526,10 @@ def glai_parlay():
         if not team_a or not team_b:
             continue
 
-        _SPORT_MAP = {'nba': 'basketball', 'mlb': 'baseball',
+        _SPORT_MAP = {'nba': 'basketball', 'mlb': 'baseball', 'nhl': 'nhl',
                       'soccer': 'soccer', 'basketball': 'basketball', 'baseball': 'baseball'}
-        _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else 1.4)
-        _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else 1.1)
+        _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else (3.1 if sport == 'nhl' else 1.4))
+        _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else (2.9 if sport == 'nhl' else 1.1))
         val_a  = calc_auto_xg(team_a, sport, _def_a)
         val_b  = calc_auto_xg(team_b, sport, _def_b)
 
@@ -554,17 +554,54 @@ def glai_parlay():
                 best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
 
             elif sport == 'mlb':
-                hist_a = glai.team_history(team_a, limit=5)
-                hist_b = glai.team_history(team_b, limit=5)
-                def _avg(h, d):
+                hist_a = glai.team_history(team_a, limit=8)
+                hist_b = glai.team_history(team_b, limit=8)
+                def _wgt(h, d, dec=2):
                     s = [x['myG'] for x in h if x.get('myG') is not None]
-                    return round(sum(s)/len(s), 2) if s else d
-                val_a = _avg(hist_a, val_a)
-                val_b = _avg(hist_b, val_b)
-                pred  = glai.predict_mlb(val_a, val_b)
-                bet   = glai.ai_bet_mlb(pred, team_a, team_b, hist_a, hist_b)
+                    if not s: return d
+                    tw=tv=0.0
+                    for i,v in enumerate(s): w=0.82**i; tw+=w; tv+=w*v
+                    return round(tv/tw, dec) if tw else d
+                def _wgt_opp(h):
+                    s = [x['oppG'] for x in h if x.get('oppG') is not None]
+                    if not s: return None
+                    tw=tv=0.0
+                    for i,v in enumerate(s): w=0.82**i; tw+=w; tv+=w*v
+                    return round(tv/tw, 2) if tw else None
+                val_a  = _wgt(hist_a, val_a)
+                val_b  = _wgt(hist_b, val_b)
+                rag_a  = _wgt_opp(hist_a)
+                rag_b  = _wgt_opp(hist_b)
+                h2h_p  = db.get_h2h_results(team_a, team_b, limit=5)
+                pred   = glai.predict_mlb(val_a, val_b, home_rag=rag_a, away_rag=rag_b, h2h=h2h_p)
+                bet    = glai.ai_bet_mlb(pred, team_a, team_b, hist_a, hist_b, h2h=h2h_p)
                 entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
-                best_p = max(pred.get('pHome', 50), pred.get('pAway', 50)) / 100
+                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
+
+            elif sport == 'nhl':
+                hist_a = glai.team_history(team_a, limit=8)
+                hist_b = glai.team_history(team_b, limit=8)
+                def _wgt_nhl(h, d):
+                    s = [x['myG'] for x in h if x.get('myG') is not None]
+                    if not s: return d
+                    tw=tv=0.0
+                    for i,v in enumerate(s): w=0.82**i; tw+=w; tv+=w*v
+                    return round(tv/tw, 2) if tw else d
+                def _wgt_opp_nhl(h):
+                    s = [x['oppG'] for x in h if x.get('oppG') is not None]
+                    if not s: return None
+                    tw=tv=0.0
+                    for i,v in enumerate(s): w=0.82**i; tw+=w; tv+=w*v
+                    return round(tv/tw, 2) if tw else None
+                val_a  = _wgt_nhl(hist_a, val_a)
+                val_b  = _wgt_nhl(hist_b, val_b)
+                gag_a  = _wgt_opp_nhl(hist_a)
+                gag_b  = _wgt_opp_nhl(hist_b)
+                h2h_p  = db.get_h2h_results(team_a, team_b, limit=5)
+                pred   = glai.predict_nhl(val_a, val_b, home_gag=gag_a, away_gag=gag_b, h2h=h2h_p)
+                bet    = glai.ai_bet_nhl(pred, team_a, team_b, hist_a, hist_b, h2h=h2h_p)
+                entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
+                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
 
             else:  # soccer
                 hist_a = glai.team_history(team_a, limit=8)
@@ -791,9 +828,9 @@ def glai_analyze():
         team_a = data.get('teamA', '')
         team_b = data.get('teamB', '')
         league = data.get('league', 'soccer')
-        sport  = data.get('sport', 'soccer')   # soccer | nba | mlb
-        _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else 1.4)
-        _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else 1.1)
+        sport  = data.get('sport', 'soccer')   # soccer | nba | mlb | nhl
+        _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else (3.1 if sport == 'nhl' else 1.4))
+        _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else (2.9 if sport == 'nhl' else 1.1))
         val_a  = float(data['xgA']) if 'xgA' in data else calc_auto_xg(team_a, sport, _def_a)
         val_b  = float(data['xgB']) if 'xgB' in data else calc_auto_xg(team_b, sport, _def_b)
     except Exception as e:
@@ -803,6 +840,57 @@ def glai_analyze():
     tokens_left = session['user'].get('tokens', 0) if u.get('role') != 'admin' else -1
 
     try:
+        # ── NHL ─────────────────────────────────────────────────────────
+        if sport == 'nhl':
+            hist_a = glai.team_history(team_a, limit=10) if team_a else []
+            hist_b = glai.team_history(team_b, limit=10) if team_b else []
+            h2h    = db.get_h2h_results(team_a, team_b, limit=6) if (team_a and team_b) else []
+
+            def _wgt_stat(hist, key, default, decimals=2):
+                scores = [h[key] for h in hist if h.get(key) is not None]
+                if not scores: return default
+                tw = tv = 0.0
+                for i, s in enumerate(scores):
+                    w = 0.82**i; tw += w; tv += w * s
+                return round(tv / tw, decimals) if tw else default
+
+            real_gpg_a = _wgt_stat(hist_a, 'myG',  val_a)
+            real_gpg_b = _wgt_stat(hist_b, 'myG',  val_b)
+            real_gag_a = _wgt_stat(hist_a, 'oppG', None)   # GAA proxy
+            real_gag_b = _wgt_stat(hist_b, 'oppG', None)
+
+            n_data  = len(hist_a) + len(hist_b)
+            conf_sc = min(90, round((min(n_data,20)/20)*60
+                          + (10 if h2h else 0)
+                          + (10 if len(hist_a)>=3 and len(hist_b)>=3 else 0)
+                          + (10 if real_gag_a and real_gag_b else 0)))
+
+            prediction = glai.predict_nhl(
+                real_gpg_a, real_gpg_b,
+                home_gag=real_gag_a, away_gag=real_gag_b,
+                h2h=h2h, confidence_score=conf_sc
+            )
+            bet = glai.ai_bet_nhl(prediction, team_a, team_b, hist_a, hist_b, h2h=h2h)
+            try:
+                db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+                           details=f'{team_a} vs {team_b} | nhl | GPG:{real_gpg_a}-{real_gpg_b}')
+            except Exception:
+                pass
+            return jsonify({
+                'ok':         True,
+                'sport':      'nhl',
+                'tokensLeft': tokens_left,
+                'prediction': prediction,
+                'bet':        bet,
+                'histA':      hist_a,
+                'histB':      hist_b,
+                'gpgA':       real_gpg_a,
+                'gpgB':       real_gpg_b,
+                'gagA':       real_gag_a,
+                'gagB':       real_gag_b,
+                'total':      glai.total_learned(),
+            })
+
         # ── NBA ─────────────────────────────────────────────────────────
         if sport == 'nba':
             hist_a = glai.team_history(team_a, limit=10) if team_a else []
@@ -948,6 +1036,27 @@ def glai_analyze():
         corners_cards = glai.predict_corners_cards(val_a, val_b, league)
         lg_stats      = glai.get_league_stats('soccer', league)
 
+        # ── Splits casa/visita para factor de local ──────────────────────
+        home_hist_a = [m for m in hist_a if m.get('isHome', True)]
+        away_hist_a = [m for m in hist_a if not m.get('isHome', True)]
+        home_hist_b = [m for m in hist_b if m.get('isHome', False)]
+        away_hist_b = [m for m in hist_b if not m.get('isHome', False)]
+
+        def _split_stats(games):
+            if not games:
+                return {'n': 0, 'gf': None, 'ga': None, 'win_pct': None}
+            gf  = round(sum(g['myG']  for g in games) / len(games), 2)
+            ga  = round(sum(g['oppG'] for g in games) / len(games), 2)
+            win = round(sum(1 for g in games if g['result'] == 'G') / len(games) * 100)
+            return {'n': len(games), 'gf': gf, 'ga': ga, 'win_pct': win}
+
+        home_split = {
+            'teamA_home': _split_stats(home_hist_a),
+            'teamB_away': _split_stats(away_hist_b),
+            'homeWinA':   bet.get('homeWinA', 0),
+            'awayWinB':   bet.get('awayWinB', 0),
+        }
+
     except Exception as e:
         import traceback
         print(f"[GLAI analyze error] {traceback.format_exc()}")
@@ -970,6 +1079,7 @@ def glai_analyze():
         'histB':      hist_b,
         'h2h':        None,
         'lgStats':    lg_stats,
+        'homeSplit':  home_split,
         'total':      glai.total_learned(),
     })
 
