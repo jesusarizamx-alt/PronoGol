@@ -293,6 +293,69 @@ def matches():
         # ── ESPN: Soccer + NBA + MLB ──────────────────────────────
         data = espn.get_all_today()
 
+        # ── NHL — fetch directo ESPN (independiente de espn.py) ───
+        try:
+            import requests as _r
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+            _hdrs = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+                'Referer': 'https://www.espn.com/',
+            }
+            _base = _dt.now(_tz.utc).replace(tzinfo=None)
+            _nhl_seen = {(m['homeTeam'], m['awayTeam']) for m in data if m.get('sport') == 'nhl'}
+            for _delta in range(3):   # hoy, mañana, pasado
+                _day = _base + _td(days=_delta)
+                _res = _r.get(
+                    'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard',
+                    headers=_hdrs, params={'limit': 50, 'dates': _day.strftime('%Y%m%d')}, timeout=8
+                )
+                if not _res.ok:
+                    continue
+                for _ev in (_res.json().get('events') or []):
+                    _comp   = _ev.get('competitions', [{}])[0]
+                    _comps  = _comp.get('competitors', [])
+                    if len(_comps) < 2:
+                        continue
+                    _home = next((c for c in _comps if c.get('homeAway') == 'home'), _comps[0])
+                    _away = next((c for c in _comps if c.get('homeAway') == 'away'), _comps[1])
+                    _hn = _home.get('team', {}).get('displayName', '')
+                    _an = _away.get('team', {}).get('displayName', '')
+                    if not _hn or not _an:
+                        continue
+                    _key = (_hn, _an)
+                    if _key in _nhl_seen:
+                        continue
+                    _nhl_seen.add(_key)
+                    _st = _comp.get('status', {}).get('type', {}).get('name', '')
+                    _hs = _home.get('score', '')
+                    _as = _away.get('score', '')
+                    # convertir 0 entero → '' para juegos no iniciados
+                    if _hs == 0 and 'PROGRESS' not in _st and 'FINAL' not in _st:
+                        _hs = ''
+                    if _as == 0 and 'PROGRESS' not in _st and 'FINAL' not in _st:
+                        _as = ''
+                    data.append({
+                        'id':        str(_ev.get('id', '')),
+                        'name':      f'{_hn} vs {_an}',
+                        'date':      _ev.get('date', _day.strftime('%Y-%m-%d') + 'T00:00:00Z'),
+                        'status':    _st,
+                        'league':    'nhl',
+                        'sport':     'nhl',
+                        'homeTeam':  _hn,
+                        'awayTeam':  _an,
+                        'homeScore': '' if _hs == '' else str(_hs),
+                        'awayScore': '' if _as == '' else str(_as),
+                        'homeAbbr':  _home.get('team', {}).get('abbreviation', ''),
+                        'awayAbbr':  _away.get('team', {}).get('abbreviation', ''),
+                        'homeLogo':  (_home.get('team', {}).get('logo') or
+                                      f"https://a.espncdn.com/i/teamlogos/hockey/500/{_home.get('team',{}).get('id','')}.png"),
+                        'awayLogo':  (_away.get('team', {}).get('logo') or
+                                      f"https://a.espncdn.com/i/teamlogos/hockey/500/{_away.get('team',{}).get('id','')}.png"),
+                    })
+        except Exception as _nhl_ex:
+            print(f'[NHL inline] error: {_nhl_ex}')
+
         # ── Sportradar: partidos en vivo (si hay key configurada) ─
         if sprt._ok():
             sr_live = sprt.get_live_matches()
