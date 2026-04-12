@@ -703,26 +703,42 @@ def debug_nhl():
     import requests as req
     from datetime import datetime, timezone
 
-    # Probar NHL API oficial primero
-    url_nhle = 'https://api-web.nhle.com/v1/scoreboard/now'
-    url_espn = 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard'
-    nhle_ok = False; espn_ok = False; nhle_count = 0; espn_count = 0
+    from datetime import datetime, timezone as tz
+    today = datetime.now(tz.utc).strftime('%Y-%m-%d')
+
+    # Probar NHL API oficial
+    nhle_ok = False; nhle_scoreboard = 0; nhle_schedule = 0
+    nhle_scoreboard_games = []; nhle_schedule_games = []
     try:
-        rn = req.get(url_nhle, timeout=8)
+        rn = req.get('https://api-web.nhle.com/v1/scoreboard/now', timeout=8)
         nhle_ok = rn.ok
-        nhle_count = len(rn.json().get('games', [])) if rn.ok else 0
-    except Exception as en:
-        nhle_ok = False
+        if rn.ok:
+            nhle_scoreboard_games = rn.json().get('games', [])
+            nhle_scoreboard = len(nhle_scoreboard_games)
+    except Exception:
+        pass
     try:
-        re2 = req.get(url_espn, timeout=8)
+        rs = req.get(f'https://api-web.nhle.com/v1/schedule/{today}', timeout=8)
+        if rs.ok:
+            for day in rs.json().get('gameWeek', []):
+                if today in day.get('date', ''):
+                    nhle_schedule_games = day.get('games', [])
+                    nhle_schedule = len(nhle_schedule_games)
+                    break
+    except Exception:
+        pass
+
+    # Probar ESPN
+    espn_ok = False; raw_status = 0; events = []
+    try:
+        re2 = req.get('https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard', timeout=8)
         raw_status = re2.status_code
         espn_ok = re2.ok
-        espn_count = len(re2.json().get('events', [])) if re2.ok else 0
         events = re2.json().get('events', []) if re2.ok else []
-    except Exception as e:
-        raw_status = 0
-        events = []
-    url = url_nhle if nhle_ok else url_espn
+    except Exception:
+        pass
+
+    url = f'nhle scoreboard({nhle_scoreboard}) + schedule({nhle_schedule}) | espn({len(events)})'
 
     # Parsear igual que espn.py
     parsed = espn.get_nhl_matches()
@@ -762,15 +778,23 @@ def debug_nhl():
         })
 
     visible = [d for d in detail if d['would_show']]
+    # Resumen de estados del scoreboard
+    nhle_states = {}
+    for g in (nhle_scoreboard_games or nhle_schedule_games):
+        st = g.get('gameState', '?')
+        nhle_states[st] = nhle_states.get(st, 0) + 1
+
     return jsonify({
-        'ok':            True,
-        'nhle_api':      {'ok': nhle_ok, 'games': nhle_count},
-        'espn_api':      {'ok': espn_ok, 'games': espn_count, 'http': raw_status},
-        'source_used':   'nhle' if nhle_ok and nhle_count > 0 else 'espn',
-        'parsed':        len(parsed),
-        'visible':       len(visible),
-        'reason_hidden': f'{len(parsed) - len(visible)} partido(s) filtrados como terminados',
-        'detail':        detail,
+        'ok':               True,
+        'today':            today,
+        'nhle_scoreboard':  {'ok': nhle_ok, 'games': nhle_scoreboard},
+        'nhle_schedule':    {'games': nhle_schedule},
+        'espn':             {'ok': espn_ok, 'games': len(events), 'http': raw_status},
+        'nhle_gameStates':  nhle_states,   # FUT/PRE/LIVE/FINAL/OFF counts
+        'parsed_by_espnpy': len(parsed),
+        'visible_after_filter': len(visible),
+        'filtered_as_final': len(parsed) - len(visible),
+        'detail':           detail,
     })
 
 

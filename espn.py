@@ -122,30 +122,46 @@ class ESPNScraper:
         """
         NHL API oficial: https://api-web.nhle.com/v1/scoreboard/now
         Devuelve partidos del día en formato estándar del sistema.
+        gameState values: FUT=futuro, PRE=previo, LIVE=en vivo, CRIT=en vivo crítico, FINAL=terminado, OFF=terminado
         """
         NHL_API = 'https://api-web.nhle.com/v1'
+        from datetime import datetime, timezone
+        today = date_str or datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+        games = []
         try:
             if date_str:
                 # /v1/schedule/YYYY-MM-DD
                 url = f'{NHL_API}/schedule/{date_str}'
                 r = self.session.get(url, timeout=8)
-                if not r.ok:
-                    return []
-                data = r.json()
-                game_week = data.get('gameWeek', [])
-                games = []
-                for day in game_week:
-                    if date_str in day.get('date', ''):
-                        games = day.get('games', [])
-                        break
+                if r.ok:
+                    for day in r.json().get('gameWeek', []):
+                        if date_str in day.get('date', ''):
+                            games = day.get('games', [])
+                            break
             else:
-                # /v1/scoreboard/now — scoreboard en tiempo real
+                # Primero intentar scoreboard/now (más actualizado)
                 url = f'{NHL_API}/scoreboard/now'
                 r = self.session.get(url, timeout=8)
-                if not r.ok:
-                    return []
-                data = r.json()
-                games = data.get('games', [])
+                if r.ok:
+                    data = r.json()
+                    games = data.get('games', [])
+                    # Si el scoreboard no tiene juegos de HOY, buscar por fecha explícita
+                    today_games = [g for g in games
+                                   if today in g.get('startTimeUTC', '')]
+                    if not today_games and games:
+                        # scoreboard está en otro día — buscar hoy explícito
+                        games = []
+
+                # Si no hay juegos o el scoreboard falló, usar schedule por fecha
+                if not games:
+                    url2 = f'{NHL_API}/schedule/{today}'
+                    r2 = self.session.get(url2, timeout=8)
+                    if r2.ok:
+                        for day in r2.json().get('gameWeek', []):
+                            if today in day.get('date', ''):
+                                games = day.get('games', [])
+                                break
 
             results = []
             for g in games:
