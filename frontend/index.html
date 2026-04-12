@@ -659,7 +659,9 @@ nav button.active{font-weight:700}
             </select>
           </div>
         </div>
-        <!-- xG ocultos — el backend los calcula automáticamente desde la DB -->
+        <!-- xG e labels ocultos — el JS los sigue usando internamente, el backend los calcula -->
+        <label id="lblValA" style="display:none"></label>
+        <label id="lblValB" style="display:none"></label>
         <input id="xgA" type="hidden" value="1.4"/>
         <input id="xgB" type="hidden" value="1.1"/>
         <div style="margin-top:8px">
