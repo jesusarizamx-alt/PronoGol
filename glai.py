@@ -78,17 +78,96 @@ class GLAIEngine:
             total_v += w * float(v)
         return total_v / total_w if total_w else 0.0
 
+    # ── Mejoras IA v3 ─────────────────────────────────────────────
+
+    def _momentum_factor(self, hist, decay=0.82):
+        """
+        Factor de momentum basado en forma reciente.
+        Retorna un multiplicador entre 0.94 y 1.06:
+          - Equipo en racha ganadora → hasta +6% sobre λ Poisson
+          - Equipo en racha perdedora → hasta -6%
+        Usa decay para que victorias recientes pesen más.
+        """
+        if not hist:
+            return 1.0
+        result_val = {'G': 1.0, 'E': 0.5, 'P': 0.0}
+        total_w = total_v = 0.0
+        for i, m in enumerate(hist[:7]):
+            w = decay ** i
+            total_w += w
+            total_v += w * result_val.get(m.get('result', 'E'), 0.5)
+        form = total_v / total_w if total_w else 0.5
+        # form=1.0 → factor=1.06, form=0.5 → factor=1.0, form=0.0 → factor=0.94
+        return round(1.0 + (form - 0.5) * 0.12, 4)
+
+    def _h2h_decay_avg(self, h2h, team_a, decay=0.75):
+        """
+        Promedio H2H con decay exponencial (partidos más recientes pesan más).
+        decay=0.75 es más agresivo que el decay de forma general (0.82)
+        para penalizar más los H2H lejanos en el tiempo.
+        Retorna: {'avgGoals': float, 'winRateA': float 0-1, 'n': int}
+        """
+        if not h2h:
+            return {}
+        total_w = total_goals = total_wins_a = 0.0
+        for i, r in enumerate(h2h):
+            w = decay ** i
+            total_w    += w
+            total_goals += w * (r['home_goals'] + r['away_goals'])
+            won = (
+                (team_a[:6].lower() in r['home_team'].lower() and r['home_goals'] > r['away_goals']) or
+                (team_a[:6].lower() in r['away_team'].lower() and r['away_goals'] > r['home_goals'])
+            )
+            total_wins_a += w * (1.0 if won else 0.0)
+        if not total_w:
+            return {}
+        return {
+            'n':        len(h2h),
+            'avgGoals': round(total_goals / total_w, 2),
+            'winRateA': round(total_wins_a / total_w, 3),   # 0.0-1.0 con decay
+        }
+
+    def _opposition_quality(self, team, sport, recent_n=10):
+        """
+        Estima la calidad media de los rivales enfrentados recientemente.
+        Un rival con muchos goles anotados = rival peligroso.
+        Retorna ratio: 1.0 = media, >1.0 = rivales fuertes, <1.0 = rivales débiles.
+        Permite ponderar victorias/derrotas según la dificultad.
+        """
+        rows = self.db.get_team_results(team, recent_n * 2)
+        if not rows:
+            return 1.0
+        opp_scores = []
+        seen = set()
+        for r in rows:
+            key = str(r.get('event_id') or r.get('id'))
+            if key in seen:
+                continue
+            seen.add(key)
+            is_home = team.lower()[:6] in r['home_team'].lower()
+            opp_g = r['away_goals'] if is_home else r['home_goals']  # goles del rival
+            opp_scores.append(float(opp_g))
+            if len(opp_scores) >= recent_n:
+                break
+        if not opp_scores:
+            return 1.0
+        # ratio vs. promedio genérico (~1.35 goles por equipo por partido en fútbol)
+        GENERIC_AVG = 1.35
+        ratio = (sum(opp_scores) / len(opp_scores)) / GENERIC_AVG
+        return round(max(0.5, min(2.0, ratio)), 3)
+
     def predict(self, sport, league_id, home_xg, away_xg, max_goals=7,
-                team_a=None, team_b=None):
+                team_a=None, team_b=None, hist_a=None, hist_b=None):
         """
         Genera matriz de marcadores y probabilidades 1X2.
         home_xg / away_xg: goles esperados base.
 
-        Mejoras v2:
+        Mejoras v3:
         - Ajuste por estadísticas de liga con blend proporcional al tamaño
         - Fuerza relativa del equipo (attack/defense ratings) cuando hay historial
         - Corrección Dixon-Coles para marcadores bajos (0-0, 1-0, 0-1, 1-1)
         - Blend final con tasas históricas de victorias de la liga
+        - Momentum de forma reciente (decay ponderado) ajusta λ Poisson directamente
         """
         lg = self.get_league_stats(sport, league_id)
 
@@ -127,6 +206,18 @@ class GLAIEngine:
         elif lg and lg['n'] >= 10:
             data_quality = min(25, lg['n'] // 5)
 
+        adj_home_xg = max(0.15, adj_home_xg)
+        adj_away_xg = max(0.10, adj_away_xg)
+
+        # ── Paso 2b: Momentum de forma reciente ───────────────────────
+        # Ajusta el λ directamente: equipo en racha → más goles proyectados
+        # Limitar el efecto a ±8% para no distorsionar el modelo Poisson
+        if hist_a:
+            mom_a = max(0.92, min(1.08, self._momentum_factor(hist_a)))
+            adj_home_xg *= mom_a
+        if hist_b:
+            mom_b = max(0.92, min(1.08, self._momentum_factor(hist_b)))
+            adj_away_xg *= mom_b
         adj_home_xg = max(0.15, adj_home_xg)
         adj_away_xg = max(0.10, adj_away_xg)
 
@@ -203,25 +294,39 @@ class GLAIEngine:
         if not rows:
             return {'attack': 1.0, 'defense': 1.0, 'n': 0}
 
-        is_home_flags = [team[:6].lower() in r['home_team'].lower() for r in rows]
-        scored   = [r['home_goals'] if ih else r['away_goals']  for r, ih in zip(rows, is_home_flags)]
-        conceded = [r['away_goals'] if ih else r['home_goals']  for r, ih in zip(rows, is_home_flags)]
+        league_avg = (lg['avgHG'] + lg['avgAG']) / 2 or 1.3
 
+        # ── Ponderación decay + calidad de rival ─────────────────────
+        # Conceder 2 goles a un rival fuerte es menos grave que a uno débil.
+        # La calidad del rival se estima por sus goles anotados en el partido.
+        total_w_sc = total_w_cc = 0.0
+        total_v_sc = total_v_cc = 0.0
+        for i, r in enumerate(rows):
+            ih       = team[:6].lower() in r['home_team'].lower()
+            my_g     = r['home_goals'] if ih else r['away_goals']
+            opp_g    = r['away_goals'] if ih else r['home_goals']
+            opp_str  = r['home_goals'] if not ih else r['away_goals']  # goles del rival = proxy fuerza
+
+            # Peso base por antigüedad + bonus si el rival era fuerte
+            opp_quality_bonus = 1.0 + max(0, (opp_str - league_avg) / league_avg) * 0.3
+            w = (0.82 ** i) * opp_quality_bonus
+
+            total_w_sc += w;  total_v_sc += w * my_g
+            total_w_cc += w;  total_v_cc += w * opp_g
+
+        avg_scored   = total_v_sc / total_w_sc if total_w_sc else 0.0
+        avg_conceded = total_v_cc / total_w_cc if total_w_cc else 0.0
         n = len(rows)
-        avg_scored   = sum(scored) / n
-        avg_conceded = sum(conceded) / n
-        league_avg   = (lg['avgHG'] + lg['avgAG']) / 2 or 1.3
 
         attack  = avg_scored   / league_avg
         defense = avg_conceded / league_avg   # < 1 es bueno (conceden menos que media)
 
-        # Forma reciente (últimos 5) con peso extra
+        # Forma reciente (últimos 5) con decay — igual que antes
         recent = rows[:5]
         if recent:
-            r_scored = [r['home_goals'] if team[:6].lower() in r['home_team'].lower()
-                        else r['away_goals'] for r in recent]
-            r_wgt = sum(0.82 ** i * g for i, g in enumerate(r_scored))
-            r_w   = sum(0.82 ** i      for i in range(len(recent)))
+            r_wgt = sum(0.82**i * (r['home_goals'] if team[:6].lower() in r['home_team'].lower() else r['away_goals'])
+                        for i, r in enumerate(recent))
+            r_w   = sum(0.82**i for i in range(len(recent)))
             form_attack = (r_wgt / r_w) / league_avg if r_w else attack
             attack = attack * 0.5 + form_attack * 0.5  # blend: historial + forma
 
@@ -332,25 +437,21 @@ class GLAIEngine:
             cross_xg_b = xg_b
         cross_total = cross_xg_a + cross_xg_b
 
-        # ── H2H: blend directo si hay suficientes ───────────────────
+        # ── H2H: blend con decay (partidos recientes pesan más) ─────
         h2h_info = {}
         if h2h and len(h2h) >= 3:
-            h2h_goals = [(r['home_goals'] + r['away_goals']) for r in h2h]
-            h2h_avg   = sum(h2h_goals) / len(h2h_goals)
-            h2h_wins_a = sum(
-                1 for r in h2h
-                if (team_a[:6].lower() in r['home_team'].lower() and r['home_goals'] > r['away_goals'])
-                or (team_a[:6].lower() in r['away_team'].lower() and r['away_goals'] > r['home_goals'])
-            )
-            h2h_win_rate_a = h2h_wins_a / len(h2h)
-            # Blend del total esperado con H2H
+            # Usar decay=0.75 para H2H — más agresivo que forma general
+            h2h_dec = self._h2h_decay_avg(h2h, team_a, decay=0.75)
+            h2h_avg        = h2h_dec['avgGoals']
+            h2h_win_rate_a = h2h_dec['winRateA']  # ya ponderado con decay
+            # Blend del total esperado con H2H (decay-weighted)
             cross_total = cross_total * 0.70 + h2h_avg * 0.30
             cross_xg_a  = cross_xg_a  * 0.80 + (h2h_avg * 0.50) * 0.20
             cross_xg_b  = cross_xg_b  * 0.80 + (h2h_avg * 0.50) * 0.20
             h2h_info = {
                 'n': len(h2h),
                 'avgGoals': round(h2h_avg, 1),
-                'winRateA': round(h2h_win_rate_a * 100),
+                'winRateA': round(h2h_win_rate_a * 100),  # decay-weighted
             }
 
         # ── Tasas ponderadas con decay ───────────────────────────────
@@ -1103,21 +1204,23 @@ class GLAIEngine:
             'streakB':         streak_b,
         }
 
-    # ─── NHL — Predicción v1 ──────────────────────────────────────
+    # ─── NHL — Predicción v2 ──────────────────────────────────────
     def predict_nhl(self, home_gpg, away_gpg,
                     home_gag=None, away_gag=None, h2h=None,
-                    confidence_score=0):
+                    confidence_score=0, hist_a=None, hist_b=None):
         """
         Predicción NHL — Poisson sobre goles por partido.
         home_gpg / away_gpg : goles anotados por partido (ponderados con decay)
         home_gag / away_gag : goles PERMITIDOS (proxy GAA del portero)
         h2h                 : lista de enfrentamientos directos
+        hist_a / hist_b     : historial reciente para momentum de forma
 
         Particularidades NHL:
         - Sin empate en tiempo regular → hay OT/shootout
         - Promedio goles totales NHL: ~5.8-6.2 por partido
         - Ventaja local: +0.15 goles aprox
         - Líneas O/U comunes: 5.5 / 6.0 / 6.5
+        - v2: momentum de forma ajusta λ Poisson ±6%
         """
         HOME_ADV = 0.15
         max_g    = 12
@@ -1136,13 +1239,22 @@ class GLAIEngine:
         # ── Blend H2H ─────────────────────────────────────────────────
         h2h_used = {}
         if h2h and len(h2h) >= 3:
-            h2h_totals = [r['home_goals'] + r['away_goals'] for r in h2h]
-            h2h_avg    = sum(h2h_totals) / len(h2h_totals)
-            blend      = 0.22
-            ratio      = ((adj_home + adj_away) * (1 - blend) + h2h_avg * blend) / (adj_home + adj_away)
-            adj_home  *= ratio
-            adj_away  *= ratio
-            h2h_used   = {'n': len(h2h), 'avgGoals': round(h2h_avg, 2)}
+            # H2H con decay: partidos recientes pesan más
+            h2h_info = self._h2h_decay_avg(h2h, '', decay=0.75)
+            h2h_avg  = h2h_info.get('avgGoals', sum(r['home_goals']+r['away_goals'] for r in h2h)/len(h2h))
+            blend    = 0.22
+            ratio    = ((adj_home + adj_away) * (1 - blend) + h2h_avg * blend) / max(0.01, adj_home + adj_away)
+            adj_home *= ratio
+            adj_away *= ratio
+            h2h_used = {'n': len(h2h), 'avgGoals': round(h2h_avg, 2)}
+
+        # ── Momentum de forma reciente (±6% sobre λ) ─────────────────
+        if hist_a:
+            adj_home *= max(0.94, min(1.06, self._momentum_factor(hist_a)))
+        if hist_b:
+            adj_away *= max(0.94, min(1.06, self._momentum_factor(hist_b)))
+        adj_home = max(0.5, adj_home)
+        adj_away = max(0.5, adj_away)
 
         # ── Probabilidades Poisson ────────────────────────────────────
         p_home = p_away = p_reg_tie = 0.0

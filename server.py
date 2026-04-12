@@ -667,7 +667,7 @@ def glai_parlay():
                 gag_a  = _wgt_opp_nhl(hist_a)
                 gag_b  = _wgt_opp_nhl(hist_b)
                 h2h_p  = db.get_h2h_results(team_a, team_b, limit=5)
-                pred   = glai.predict_nhl(val_a, val_b, home_gag=gag_a, away_gag=gag_b, h2h=h2h_p)
+                pred   = glai.predict_nhl(val_a, val_b, home_gag=gag_a, away_gag=gag_b, h2h=h2h_p, hist_a=hist_a, hist_b=hist_b)
                 bet    = glai.ai_bet_nhl(pred, team_a, team_b, hist_a, hist_b, h2h=h2h_p)
                 entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
                 if pick == 'home':   best_p = pred.get('pctA', 50) / 100
@@ -679,7 +679,8 @@ def glai_parlay():
                 hist_b = glai.team_history(team_b, limit=8)
                 h2h_p  = db.get_h2h_results(team_a, team_b, limit=6)
                 pred    = glai.predict('soccer', league, val_a, val_b,
-                                       team_a=team_a, team_b=team_b)
+                                       team_a=team_a, team_b=team_b,
+                                       hist_a=hist_a, hist_b=hist_b)
                 bet     = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b,
                                       h2h=h2h_p)
                 corners = glai.predict_corners_cards(val_a, val_b, league)
@@ -1065,7 +1066,8 @@ def glai_analyze():
             prediction = glai.predict_nhl(
                 real_gpg_a, real_gpg_b,
                 home_gag=real_gag_a, away_gag=real_gag_b,
-                h2h=h2h, confidence_score=conf_sc
+                h2h=h2h, confidence_score=conf_sc,
+                hist_a=hist_a, hist_b=hist_b
             )
             bet = glai.ai_bet_nhl(prediction, team_a, team_b, hist_a, hist_b, h2h=h2h)
             try:
@@ -1225,9 +1227,10 @@ def glai_analyze():
                 pass
         threading.Thread(target=_fetch_tsdb, daemon=True).start()
 
-        # Predict v2: pasa team_a/team_b para strength ratings + Dixon-Coles
+        # Predict v3: pasa hist_a/hist_b para momentum de forma reciente
         prediction    = glai.predict('soccer', league, val_a, val_b,
-                                     team_a=team_a, team_b=team_b)
+                                     team_a=team_a, team_b=team_b,
+                                     hist_a=hist_a, hist_b=hist_b)
         bet           = glai.ai_bet(hist_a, hist_b, val_a, val_b, team_a, team_b,
                                     h2h=h2h)
         corners_cards = glai.predict_corners_cards(val_a, val_b, league)
