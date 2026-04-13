@@ -243,6 +243,38 @@ class GLAIEngine:
 
         matrix.sort(key=lambda x: x['p'], reverse=True)
 
+        # ── Asian Handicap (AH) — desde la matriz Poisson ─────────────
+        _diff_p = {}
+        for _it in matrix:
+            _d = _it['a'] - _it['b']
+            _diff_p[_d] = _diff_p.get(_d, 0.0) + _it['p']
+        _diff_total = sum(_diff_p.values()) or 1.0
+        _diff_p = {k: v / _diff_total for k, v in _diff_p.items()}
+
+        def _ah(line):
+            """P(home cubre AH -line): home - away > line (push si igual)."""
+            _w = _pp = 0.0
+            for _d2, _pr2 in _diff_p.items():
+                _eff = _d2 - line
+                if _eff > 0:    _w  += _pr2
+                elif _eff == 0: _pp += _pr2
+            return _w + _pp * 0.5
+
+        asian_handicap = {
+            'home-2.5': round(_ah(2.5) * 100),   # local gana por 3+
+            'home-1.5': round(_ah(1.5) * 100),   # local gana por 2+
+            'home-0.5': round(_ah(0.5) * 100),   # local gana (cualquier margen)
+            'home+0.5': round(_ah(-0.5) * 100),  # local no pierde (gana o empata)
+            'home+1.5': round(_ah(-1.5) * 100),  # local cubre +1.5
+            'home+2.5': round(_ah(-2.5) * 100),  # local cubre +2.5
+            'away-2.5': round((1 - _ah(-2.5)) * 100),  # visita gana por 3+
+            'away-1.5': round((1 - _ah(-1.5)) * 100),  # visita gana por 2+
+            'away-0.5': round((1 - _ah(-0.5)) * 100),  # visita gana (cualquier margen)
+            'away+0.5': round((1 - _ah(0.5)) * 100),   # visita no pierde
+            'away+1.5': round((1 - _ah(1.5)) * 100),   # visita cubre +1.5
+            'away+2.5': round((1 - _ah(2.5)) * 100),   # visita cubre +2.5
+        }
+
         # ── BTTS y Over/Under ──────────────────────────────────────────
         p_btts  = (1 - math.exp(-adj_home_xg)) * (1 - math.exp(-adj_away_xg))
         over_25 = sum(
@@ -259,20 +291,21 @@ class GLAIEngine:
         )
 
         return {
-            'pctA':         round(p_home * 100),
-            'pctD':         round(p_draw * 100),
-            'pctB':         round(p_away * 100),
-            'xgA':          round(adj_home_xg, 2),
-            'xgB':          round(adj_away_xg, 2),
-            'btts':         round(p_btts * 100),
-            'over25':       round(over_25 * 100),
-            'over15':       round(over_15 * 100),
-            'matrix':       matrix[:10],
-            'lgStats':      lg,
-            'totalLearned': self.total_learned(),
-            'dataQuality':  data_quality,
-            'strength':     strength_info,
-            'model':        'poisson-dc-v2',
+            'pctA':           round(p_home * 100),
+            'pctD':           round(p_draw * 100),
+            'pctB':           round(p_away * 100),
+            'xgA':            round(adj_home_xg, 2),
+            'xgB':            round(adj_away_xg, 2),
+            'btts':           round(p_btts * 100),
+            'over25':         round(over_25 * 100),
+            'over15':         round(over_15 * 100),
+            'matrix':         matrix[:10],
+            'lgStats':        lg,
+            'totalLearned':   self.total_learned(),
+            'dataQuality':    data_quality,
+            'strength':       strength_info,
+            'asianHandicap':  asian_handicap,
+            'model':          'poisson-dc-v2',
         }
 
     def get_team_strength(self, team, sport, league_id, lg=None):
@@ -511,6 +544,36 @@ class GLAIEngine:
             bets.append({'bet': f'{team_a} Gana (Historial H2H)', 'conf': h2h_info['winRateA'],
                          'reason': f'En los últimos {h2h_info["n"]} enfrentamientos directos, {team_a} ganó {h2h_info["winRateA"]}%'})
 
+        # ── Asian Handicap desde xG cruzado ───────────────────────────
+        _max_g = 7
+        _dp = {}
+        for _hh in range(_max_g + 1):
+            for _aa in range(_max_g + 1):
+                _dd = _hh - _aa
+                _dp[_dd] = _dp.get(_dd, 0.0) + (
+                    self._poisson(max(0.15, cross_xg_a), _hh) *
+                    self._poisson(max(0.10, cross_xg_b), _aa)
+                )
+        def _ahb(line):
+            _w2 = _pp2 = 0.0
+            for _d3, _pr3 in _dp.items():
+                _e2 = _d3 - line
+                if _e2 > 0:    _w2  += _pr3
+                elif _e2 == 0: _pp2 += _pr3
+            return _w2 + _pp2 * 0.5
+
+        ah_hm15 = round(_ahb(1.5) * 100)   # home -1.5 (gana por 2+)
+        ah_ap15 = round((1 - _ahb(1.5)) * 100)  # away +1.5 (cubre +1.5)
+        ah_hm05 = round(_ahb(0.5) * 100)   # home -0.5 (gana)
+        ah_ap05 = round((1 - _ahb(0.5)) * 100)  # away +0.5 (no pierde)
+
+        if ah_hm15 >= 62 and home_win_a >= 0.55:
+            bets.append({'bet': f'{team_a} -1.5 (Asian Handicap)', 'conf': min(74, ah_hm15),
+                         'reason': f'{ah_hm15}% de ganar por 2+ goles · xG {cross_xg_a:.2f} vs {cross_xg_b:.2f}'})
+        elif ah_ap15 >= 65:
+            bets.append({'bet': f'{team_b} +1.5 (Asian Handicap)', 'conf': min(74, ah_ap15),
+                         'reason': f'{ah_ap15}% de cubrir +1.5 — visita defensiva proyectada'})
+
         if not bets:
             if cross_total >= 2.6:
                 bets.append({'bet': 'Más de 2.5 Goles', 'conf': min(72, round(50 + (cross_total - 2.5) * 16)),
@@ -540,6 +603,10 @@ class GLAIEngine:
             'h2h':             h2h_info,
             'homeWinA':        round(home_win_a * 100),
             'awayWinB':        round(away_win_b * 100),
+            'ahHome_m15':      ah_hm15,
+            'ahAway_p15':      ah_ap15,
+            'ahHome_m05':      ah_hm05,
+            'ahAway_p05':      ah_ap05,
         }
 
     # ─── Predicción de esquinas y tarjetas ───────────────────────────
@@ -686,6 +753,24 @@ class GLAIEngine:
         p_home = 0.5 + 0.5 * math.erf(z)
         p_away = 1.0 - p_home
 
+        # ── Líneas ATS (Against The Spread) ──────────────────────────
+        def _ats(line):
+            """P(home - away > line) usando dist. Normal(spread, SIGMA)."""
+            _z = (line - spread) / (SIGMA * math.sqrt(2))
+            return max(0.01, min(0.99, 0.5 - 0.5 * math.erf(_z)))
+
+        def _ats_away(line):
+            """P(away - home > line) — away gana por line+ pts."""
+            _z = (line + spread) / (SIGMA * math.sqrt(2))
+            return max(0.01, min(0.99, 0.5 - 0.5 * math.erf(_z)))
+
+        handicap = {}
+        for _ln in [1.5, 3.5, 5.5, 7.5, 10.5, 13.5]:
+            handicap[f'home-{_ln}'] = round(_ats(_ln) * 100)         # local cubre -{_ln}
+            handicap[f'away+{_ln}'] = round((1 - _ats(_ln)) * 100)   # visita cubre +{_ln}
+            handicap[f'away-{_ln}'] = round(_ats_away(_ln) * 100)    # visita cubre -{_ln}
+            handicap[f'home+{_ln}'] = round((1 - _ats_away(_ln)) * 100)  # local cubre +{_ln}
+
         total   = adj_home + adj_away
         ou_line = round(total / 2.5) * 2.5
         ou_over = min(78, max(22, round(50 + (total - ou_line) / (SIGMA * 0.35))))
@@ -725,6 +810,7 @@ class GLAIEngine:
             'halfTime':      {'projHome': ht_home, 'projAway': ht_away,
                               'projTotal': ht_total, 'ouLine': ht_ou_ln, 'ouOver': ht_ou_ov},
             'quarters':      quarters,
+            'handicap':      handicap,
             'dataQuality':   confidence_score,
             'hasCrossStats': bool(home_apg and away_apg),
         }
@@ -743,7 +829,8 @@ class GLAIEngine:
         ou_ln  = pred.get('ouLine', 220)
         ou_ov  = pred.get('ouOver', 50)
         ht     = pred.get('halfTime', {})
-        abs_sp = abs(spread)
+        abs_sp   = abs(spread)
+        handicap = pred.get('handicap', {})
 
         def wgt_rate(arr, fn, decay=0.82):
             if not arr: return 0.5
@@ -806,6 +893,20 @@ class GLAIEngine:
             conf = min(74, round(50 + abs_sp * 2.0))
             bets.append({'bet': f'{fav} -{abs_sp:.1f} (Spread)', 'conf': conf,
                          'reason': f'Diferencia proyectada {abs_sp:.1f} pts · respaldado por historial cruzado'})
+
+        # ── ATS (Against The Spread) — línea más cercana ──────────────
+        if abs_sp >= 4:
+            _ats_line = 3.5 if abs_sp >= 6 else 1.5
+            if spread > 0:
+                _p_ats = handicap.get(f'home-{_ats_line}', 50)
+                if _p_ats >= 58:
+                    bets.append({'bet': f'{team_a} -{_ats_line} (ATS)', 'conf': min(74, _p_ats),
+                                 'reason': f'{_p_ats}% de cubrir -{_ats_line} · ventaja proj. {abs_sp:.1f} pts'})
+            else:
+                _p_ats = handicap.get(f'away-{_ats_line}', 50)
+                if _p_ats >= 58:
+                    bets.append({'bet': f'{team_b} -{_ats_line} (ATS)', 'conf': min(74, _p_ats),
+                                 'reason': f'{_p_ats}% de cubrir -{_ats_line} · {team_b} domina {abs_sp:.1f} pts proj.'})
 
         if ou_ov >= 60:
             bets.append({'bet': f'Más de {ou_ln} pts (O/U)', 'conf': min(76, ou_ov),
@@ -937,6 +1038,25 @@ class GLAIEngine:
             for h in range(max_r+1) for a in range(max_r+1) if a - h >= 2
         )
 
+        # ── Alt Run Lines (-2.5 y -0.5) ──────────────────────────────
+        p_rl_home_25 = sum(
+            self._poisson(adj_home, h) * self._poisson(adj_away, a)
+            for h in range(max_r+1) for a in range(max_r+1) if h - a >= 3
+        )
+        p_rl_away_25 = sum(
+            self._poisson(adj_home, h) * self._poisson(adj_away, a)
+            for h in range(max_r+1) for a in range(max_r+1) if a - h >= 3
+        )
+        # -0.5 = gana por cualquier margen (moneyline sin empate posible)
+        p_rl_home_05 = sum(
+            self._poisson(adj_home, h) * self._poisson(adj_away, a)
+            for h in range(max_r+1) for a in range(max_r+1) if h > a
+        )
+        p_rl_away_05 = sum(
+            self._poisson(adj_home, h) * self._poisson(adj_away, a)
+            for h in range(max_r+1) for a in range(max_r+1) if a > h
+        )
+
         # ── 1er Inning — NRFI ────────────────────────────────────────
         F1        = 0.118
         first_h   = round(adj_home * F1, 3)
@@ -992,8 +1112,12 @@ class GLAIEngine:
             'over6_5':      round(over_6_5 * 100),
             'over7_5':      round(over_7_5 * 100),
             'over9_5':      round(over_9_5 * 100),
-            'runLineHome':  round(p_rl_home * 100),
-            'runLineAway':  round(p_rl_away * 100),
+            'runLineHome':  round(p_rl_home * 100),    # local -1.5
+            'runLineAway':  round(p_rl_away * 100),    # visita -1.5
+            'runLine25Home': round(p_rl_home_25 * 100), # local -2.5
+            'runLine25Away': round(p_rl_away_25 * 100), # visita -2.5
+            'runLine05Home': round(p_rl_home_05 * 100), # local -0.5 (gana)
+            'runLine05Away': round(p_rl_away_05 * 100), # visita -0.5 (gana)
             'first': {
                 'projHome':  round(first_h, 2),
                 'projAway':  round(first_a, 2),
@@ -1028,10 +1152,14 @@ class GLAIEngine:
         ov45   = pred.get('over4_5', 50)
         ov65   = pred.get('over6_5', 50)
         ov75   = pred.get('over7_5', 50)
-        rl_h   = pred.get('runLineHome', 40)
-        rl_a   = pred.get('runLineAway', 40)
-        first  = pred.get('first', {})
-        f5     = pred.get('f5', {})
+        rl_h    = pred.get('runLineHome', 40)
+        rl_a    = pred.get('runLineAway', 40)
+        rl_h25  = pred.get('runLine25Home', 20)
+        rl_a25  = pred.get('runLine25Away', 20)
+        rl_h05  = pred.get('runLine05Home', 50)
+        rl_a05  = pred.get('runLine05Away', 50)
+        first   = pred.get('first', {})
+        f5      = pred.get('f5', {})
 
         def wgt_rate(arr, fn, decay=0.82):
             if not arr: return 0.5
@@ -1098,6 +1226,20 @@ class GLAIEngine:
             bets.append({'bet': f'{team_b} +1.5 (Run Line)', 'conf': min(72, rl_a),
                          'reason': f'{rl_a}% de mantenerse a ≤1 carrera de diferencia'})
 
+        # ── Alt Run Lines (-2.5 / -0.5) ──────────────────────────────
+        if rl_h25 >= 42:
+            bets.append({'bet': f'{team_a} -2.5 (Alt Run Line)', 'conf': min(68, rl_h25),
+                         'reason': f'{rl_h25}% de ganar por 3+ · ofensiva dominante proyectada'})
+        elif rl_a25 >= 42:
+            bets.append({'bet': f'{team_b} -2.5 (Alt Run Line)', 'conf': min(68, rl_a25),
+                         'reason': f'{rl_a25}% de que visita gane por 3+ carreras'})
+        if rl_h05 >= 65 and rl_h < 55:
+            bets.append({'bet': f'{team_a} -0.5 (Gana partido)', 'conf': min(70, rl_h05),
+                         'reason': f'{rl_h05}% de ganar por cualquier margen — moneyline reforzado'})
+        elif rl_a05 >= 65 and rl_a < 55:
+            bets.append({'bet': f'{team_b} -0.5 (Gana partido)', 'conf': min(70, rl_a05),
+                         'reason': f'{rl_a05}% de que visita gane — pitcheo sólido proyectado'})
+
         if ov65 >= 62:
             bets.append({'bet': 'Más de 6.5 carreras', 'conf': min(74, ov65),
                          'reason': f'{ov65}% Over 6.5 · total ponderado {hist_avg_total:.1f} · proyección {total:.1f}'})
@@ -1153,6 +1295,10 @@ class GLAIEngine:
             'awayWinB':        round(away_win_b * 100),
             'streakA':         streak_a,
             'streakB':         streak_b,
+            'runLine25Home':   rl_h25,
+            'runLine25Away':   rl_a25,
+            'runLine05Home':   rl_h05,
+            'runLine05Away':   rl_a05,
         }
 
     # ─── NHL — Predicción v2 ──────────────────────────────────────
@@ -1555,6 +1701,254 @@ class GLAIEngine:
             'scoreB':      away_runs,
             'inning':      inning,
             'half':        half,
+        }
+
+    # ─── TENIS — Predicción v1 ───────────────────────────────────
+    def predict_tennis(self, rank_a, rank_b, surface='hard',
+                       h2h=None, hist_a=None, hist_b=None,
+                       confidence_score=0, fmt='bo3'):
+        """
+        Predicción Tenis v1 — modelo Elo por ranking + superficie + forma.
+
+        rank_a / rank_b : ranking ATP/WTA (menor = mejor). Si es 0 → desconocido.
+        surface         : 'hard' | 'clay' | 'grass' | 'indoor'
+        fmt             : 'bo3' (mejor de 3, WTA/ATP 250-500) | 'bo5' (Grand Slams)
+        h2h             : historial directo de partidos
+        hist_a / hist_b : forma reciente [{'result': 'G'/'P', ...}]
+
+        Modelo:
+        1. Probabilidad base desde rankings → Elo logarítmico
+        2. Factor de superficie (clay favorece defensa, grass favorece servicio)
+        3. Momentum de forma reciente (±8%)
+        4. Blend con H2H decay (peso 25% si hay ≥3 H2H)
+        5. Set handicap, juegos O/U, breakpoint, tiebreak
+        """
+        max_rank = 500  # tope para jugadores sin ranking conocido
+
+        # ── 1. Elo estimado desde ranking ────────────────────────────
+        def rank_to_elo(r):
+            r = max(1, r or max_rank)
+            return 2500 - 350 * math.log(r)  # rank 1 → ~2500, rank 100 → ~1879
+
+        elo_a = rank_to_elo(rank_a)
+        elo_b = rank_to_elo(rank_b)
+
+        # ── 2. Factor de superficie ──────────────────────────────────
+        # Sin datos de especialidad de jugador, ajustamos muy levemente
+        # (la especialidad real se aprende con el tiempo del historial)
+        SURFACE_FACTORS = {
+            'clay':   {'home_bonus': 0.0, 'variance': 0.85},   # más lento, menos ventaja servicio
+            'grass':  {'home_bonus': 0.0, 'variance': 1.15},   # más rápido, favorece favorito
+            'hard':   {'home_bonus': 0.0, 'variance': 1.00},   # neutro
+            'indoor': {'home_bonus': 0.0, 'variance': 1.05},   # ligeramente más rápido
+        }
+        surf = SURFACE_FACTORS.get(surface.lower(), SURFACE_FACTORS['hard'])
+        # En arcilla los partidos son más ajustados → reducir diferencia de Elo
+        elo_diff = (elo_a - elo_b) * surf['variance']
+        p_base_a = 1.0 / (1.0 + 10 ** (-elo_diff / 400))
+
+        # ── 3. Momentum de forma reciente (±8%) ─────────────────────
+        mom_a = max(0.92, min(1.08, self._momentum_factor(hist_a))) if hist_a else 1.0
+        mom_b = max(0.92, min(1.08, self._momentum_factor(hist_b))) if hist_b else 1.0
+        # Ajustar la probabilidad en logit-space para evitar extremos
+        logit = math.log(p_base_a / (1 - p_base_a)) if 0 < p_base_a < 1 else 0.0
+        logit += (mom_a - 1.0) * 2.0 - (mom_b - 1.0) * 2.0
+        p_adj_a = 1.0 / (1.0 + math.exp(-logit))
+
+        # ── 4. Blend H2H con decay ───────────────────────────────────
+        h2h_info = {}
+        if h2h and len(h2h) >= 3:
+            h2h_dec = self._h2h_decay_avg(h2h, '', decay=0.75)
+            h2h_win_a = h2h_dec.get('winRateA', p_adj_a)
+            # Blend 25% H2H decay-weighted
+            p_adj_a = p_adj_a * 0.75 + h2h_win_a * 0.25
+            h2h_info = {
+                'n':        h2h_dec.get('n', len(h2h)),
+                'winRateA': round(h2h_win_a * 100),
+                'avgGames': round(h2h_dec.get('avgGoals', 21), 1),
+            }
+
+        # Normalizar
+        p_a = max(0.03, min(0.97, p_adj_a))
+        p_b = 1.0 - p_a
+
+        # ── 5. Set handicap — probabilidad de ganar por +1.5 sets ────
+        # Modelo: si p_a = 0.75, P(2-0 bo3) ≈ p_a², P(2-1) ≈ 2*p_a*(1-p_a)*p_a
+        if fmt == 'bo5':
+            max_sets = 5
+            win_target = 3
+        else:
+            max_sets = 3
+            win_target = 2
+
+        def p_win_clean(p, target, max_s):
+            """P(ganar target-0)"""
+            return p ** target
+
+        def p_win_margin(p, target, max_s):
+            """P(ganar con al menos 1 set perdido)"""
+            return 1 - p_win_clean(p, target, max_s) - sum(
+                math.comb(target - 1 + i, i) * (1 - p) ** i * p ** (target)
+                for i in range(1, max_s - target + 1)
+            ) if max_s > target else 0.0
+
+        p_hl_a = p_win_clean(p_a, win_target, max_sets)   # gana limpio (handicap -1.5)
+        p_hl_b = p_win_clean(p_b, win_target, max_sets)   # visitante gana limpio
+
+        # ── 6. O/U juegos totales ────────────────────────────────────
+        # Promedio ATP: ~21 juegos bo3, ~36 juegos bo5
+        base_games = 35.5 if fmt == 'bo5' else 21.5
+        # Partidos muy parejos → más juegos (tiebreaks)
+        competitiveness = 1.0 - abs(p_a - 0.5) * 2   # 0 (one-sided) → 1 (50/50)
+        proj_games = round(base_games + competitiveness * 4.5, 1)
+        ou_line_games = round(proj_games / 0.5) * 0.5
+
+        # ── 7. Probabilidad de tiebreak en el set decisivo ───────────
+        p_tiebreak = round(min(75, max(15, (1.0 - abs(p_a - 0.5) * 2) * 60)), 1)
+
+        # ── 8. Probabilidad Over 2.5 sets (en bo3 = duración del partido) ─
+        # P(2-0 de cualquier lado) = limpio, P(2-1) = competido
+        p_clean = p_a ** win_target + p_b ** win_target
+        p_over_sets = max(0, round((1 - p_clean) * 100))   # P(partido va a sets)
+
+        return {
+            'pctA':          round(p_a * 100),
+            'pctB':          round(p_b * 100),
+            'surface':       surface,
+            'format':        fmt,
+            'eloA':          round(elo_a, 1),
+            'eloB':          round(elo_b, 1),
+            'rankA':         rank_a or 0,
+            'rankB':         rank_b or 0,
+            'handicapA':     round(p_hl_a * 100),   # gana sin perder sets
+            'handicapB':     round(p_hl_b * 100),
+            'projGames':     proj_games,
+            'ouLineGames':   ou_line_games,
+            'tiebreakPct':   p_tiebreak,
+            'overSetsPct':   p_over_sets,            # P(>2 sets en bo3 / >4 en bo5)
+            'h2h':           h2h_info,
+            'dataQuality':   confidence_score,
+            'model':         'tennis-elo-v1',
+        }
+
+    def ai_bet_tennis(self, pred, player_a, player_b,
+                      hist_a=None, hist_b=None, h2h=None):
+        """
+        Recomendación de apuesta Tenis v1.
+        Moneyline, Set Handicap, O/U Juegos, Tiebreak.
+        """
+        hist_a = hist_a or []
+        hist_b = hist_b or []
+        pA     = pred.get('pctA', 50)
+        pB     = pred.get('pctB', 50)
+        hl_a   = pred.get('handicapA', 30)   # gana sin ceder sets
+        hl_b   = pred.get('handicapB', 30)
+        games  = pred.get('projGames', 21.5)
+        ou_ln  = pred.get('ouLineGames', 21.5)
+        over_s = pred.get('overSetsPct', 40)   # P(>sets)
+        tb_pct = pred.get('tiebreakPct', 35)
+        surface = pred.get('surface', 'hard')
+        fmt    = pred.get('format', 'bo3')
+
+        def wgt_rate(arr, fn, decay=0.82):
+            if not arr: return 0.5
+            tw = tv = 0.0
+            for i, m in enumerate(arr):
+                w = decay**i; tw += w; tv += w*(1.0 if fn(m) else 0.0)
+            return tv/tw if tw else 0.5
+
+        win_a = wgt_rate(hist_a, lambda m: m['result']=='G')
+        win_b = wgt_rate(hist_b, lambda m: m['result']=='G')
+
+        h2h_info = pred.get('h2h', {})
+
+        n_total    = len(hist_a) + len(hist_b)
+        conf_score = min(88, round((min(n_total,16)/16)*55
+                         + (15 if h2h_info else 0)
+                         + (10 if len(hist_a)>=3 and len(hist_b)>=3 else 0)
+                         + (8  if pred.get('rankA') and pred.get('rankB') else 0)))
+
+        surf_label = {'clay': 'Arcilla 🟠', 'grass': 'Hierba 🟢',
+                      'hard': 'Dura 🔵', 'indoor': 'Indoor 🏟️'}.get(surface, surface)
+        fmt_label  = 'Mejor de 5' if fmt == 'bo5' else 'Mejor de 3'
+
+        bets = []
+
+        # ── Moneyline ─────────────────────────────────────────────────
+        if pA >= 65:
+            bets.append({'bet': f'{player_a} Gana', 'conf': min(82, pA),
+                         'reason': f'{pA}% probabilidad · Ranking #{pred.get("rankA","?")} vs #{pred.get("rankB","?")} · {surf_label}'})
+        elif pB >= 65:
+            bets.append({'bet': f'{player_b} Gana', 'conf': min(82, pB),
+                         'reason': f'{pB}% probabilidad · {surf_label} favorece al visitante'})
+        elif pA >= 55:
+            bets.append({'bet': f'{player_a} Gana (Moneyline)', 'conf': min(72, pA),
+                         'reason': f'{pA}% · ligera ventaja por ranking y forma reciente'})
+
+        # ── Set Handicap (ganar 2-0 bo3 / 3-0 bo5) ───────────────────
+        if hl_a >= 48:
+            bets.append({'bet': f'{player_a} -{1 if fmt=="bo3" else 2}.5 Sets', 'conf': min(74, hl_a),
+                         'reason': f'{hl_a}% de ganar sin ceder sets — dominio esperado en {surf_label}'})
+        elif hl_b >= 45:
+            bets.append({'bet': f'{player_b} +{1 if fmt=="bo3" else 2}.5 Sets', 'conf': min(70, 100-hl_a),
+                         'reason': f'{100-hl_a}% de que el partido no sea limpio — {player_b} lucha'})
+
+        # ── O/U Juegos totales ─────────────────────────────────────────
+        if games > ou_ln + 1.0:
+            bets.append({'bet': f'Más de {ou_ln} juegos', 'conf': min(74, round(55 + (games - ou_ln) * 5)),
+                         'reason': f'Proyección {games} juegos — partido competido en {surf_label}'})
+        elif games < ou_ln - 1.0:
+            bets.append({'bet': f'Menos de {ou_ln} juegos', 'conf': min(74, round(55 + (ou_ln - games) * 5)),
+                         'reason': f'Proyección {games} juegos — dominio del favorito esperado'})
+
+        # ── Over sets (partido largo) ──────────────────────────────────
+        if over_s >= 62 and fmt == 'bo3':
+            bets.append({'bet': f'Partido a 3 Sets', 'conf': min(72, over_s),
+                         'reason': f'{over_s}% de que llegue al set decisivo — {fmt_label} muy igualado'})
+
+        # ── Tiebreak ──────────────────────────────────────────────────
+        if tb_pct >= 52:
+            bets.append({'bet': 'Al menos 1 Tiebreak', 'conf': min(68, tb_pct),
+                         'reason': f'{tb_pct}% de probabilidad de tiebreak — jugadores muy equilibrados'})
+
+        # ── H2H ───────────────────────────────────────────────────────
+        if h2h_info and h2h_info.get('winRateA', 50) >= 70:
+            bets.append({'bet': f'{player_a} Gana (Domina H2H)', 'conf': min(78, h2h_info['winRateA']),
+                         'reason': f'Gana {h2h_info["winRateA"]}% de los últimos {h2h_info["n"]} enfrentamientos directos'})
+
+        # ── Forma reciente ─────────────────────────────────────────────
+        if win_a >= 0.78 and len(hist_a) >= 4 and pA >= 55:
+            bets.append({'bet': f'{player_a} Gana [🔥 Racha]', 'conf': min(80, round(win_a*100)+2),
+                         'reason': f'{player_a} gana {round(win_a*100)}% de sus últimos partidos — en racha'})
+
+        if not bets:
+            fav = player_a if pA >= pB else player_b
+            p_fav = max(pA, pB)
+            bets.append({'bet': f'{fav} Gana', 'conf': max(p_fav, 52),
+                         'reason': f'Favorito por ranking · {surf_label} · {fmt_label}'})
+
+        bets.sort(key=lambda x: x['conf'], reverse=True)
+
+        narrative = (
+            f"🎾 {player_a} vs {player_b} · {surf_label} · {fmt_label}.\n\n"
+            f"Ranking: #{pred.get('rankA','?')} vs #{pred.get('rankB','?')} "
+            f"(Elo estimado {pred.get('eloA',0):.0f} vs {pred.get('eloB',0):.0f}).\n"
+            f"Probabilidad: {player_a} {pA}% — {player_b} {pB}%.\n"
+            f"Juegos proyectados: {games} · Tiebreak: {tb_pct}%\n"
+            + (f"H2H: {player_a} gana {h2h_info.get('winRateA')}% de {h2h_info.get('n')} encuentros.\n"
+               if h2h_info else '')
+            + f"\n{bets[0]['bet']} ({bets[0]['conf']}%) — {bets[0]['reason']}."
+            f"\n\nℹ️ Análisis orientativo. Apuesta con responsabilidad."
+        )
+        return {
+            'best':            bets[0] if bets else None,
+            'alt':             bets[1] if len(bets) > 1 else None,
+            'narrative':       narrative,
+            'confidenceScore': conf_score,
+            'hasRealData':     len(hist_a) >= 2 or len(hist_b) >= 2,
+            'h2h':             h2h_info,
+            'winRateA':        round(win_a * 100),
+            'winRateB':        round(win_b * 100),
         }
 
     def auto_scan(self, days_back=7, sources=None):
