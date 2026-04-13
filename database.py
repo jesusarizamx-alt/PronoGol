@@ -128,6 +128,24 @@ class Database:
             created_at  TEXT NOT NULL
         );
 
+        -- Feedback de análisis IA (¿fue correcta la predicción?)
+        CREATE TABLE IF NOT EXISTS ai_feedback (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            username     TEXT NOT NULL,
+            sport        TEXT NOT NULL,
+            team_a       TEXT NOT NULL,
+            team_b       TEXT NOT NULL,
+            bet_main     TEXT,           -- apuesta principal sugerida
+            correct      INTEGER,        -- 1=correcta, 0=incorrecta
+            actual_home  INTEGER,        -- resultado real (para aprender)
+            actual_away  INTEGER,        -- resultado real (para aprender)
+            league_id    TEXT,
+            learned_at   TEXT,           -- NULL = pendiente de aplicar
+            created_at   TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_feedback_sport ON ai_feedback(sport);
+        CREATE INDEX IF NOT EXISTS idx_feedback_correct ON ai_feedback(correct);
+
         -- Índices para búsquedas frecuentes
         CREATE INDEX IF NOT EXISTS idx_results_league ON match_results(sport, league_id);
         CREATE INDEX IF NOT EXISTS idx_results_teams  ON match_results(home_team, away_team);
@@ -355,3 +373,38 @@ class Database:
             SELECT * FROM account_logs ORDER BY created_at DESC LIMIT ?
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
+
+    # ─── Feedback de análisis IA ──────────────────────────────────
+    def add_feedback(self, username, sport, team_a, team_b,
+                     bet_main, correct, league_id=None):
+        """Guarda si la predicción fue correcta o no."""
+        with self._write_lock:
+            c = self._conn()
+            c.execute("""
+                INSERT INTO ai_feedback
+                (username, sport, team_a, team_b, bet_main, correct, league_id, created_at)
+                VALUES (?,?,?,?,?,?,?,?)
+            """, (username, sport, team_a.strip(), team_b.strip(),
+                  bet_main, 1 if correct else 0, league_id,
+                  datetime.utcnow().isoformat()))
+            c.commit()
+
+    def get_feedbacks(self, limit=200):
+        """Devuelve todos los feedbacks, los más recientes primero."""
+        rows = self._conn().execute("""
+            SELECT * FROM ai_feedback ORDER BY created_at DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def apply_feedback_learning(self, fid, actual_home, actual_away):
+        """Marca un feedback como aprendido y guarda el resultado real."""
+        with self._write_lock:
+            c = self._conn()
+            c.execute("""
+                UPDATE ai_feedback
+                SET actual_home=?, actual_away=?, learned_at=?
+                WHERE id=?
+            """, (actual_home, actual_away, datetime.utcnow().isoformat(), fid))
+            c.commit()
+            row = c.execute("SELECT * FROM ai_feedback WHERE id=?", (fid,)).fetchone()
+            return dict(row) if row else None

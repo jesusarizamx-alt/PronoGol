@@ -362,6 +362,62 @@ def matches():
         except Exception as _nhl_ex:
             print(f'[NHL inline] error: {_nhl_ex}')
 
+        # ── TENIS — ATP + WTA fetch directo ESPN ──────────────────
+        try:
+            _tennis_seen = {(m['homeTeam'], m['awayTeam']) for m in data if m.get('sport') == 'tennis'}
+            for _circuit, _league_id in [('atp', 'atp'), ('wta', 'wta')]:
+                for _delta in range(3):
+                    _day = _base + _td(days=_delta)
+                    _tres = _r.get(
+                        f'https://site.api.espn.com/apis/site/v2/sports/tennis/{_circuit}/scoreboard',
+                        headers=_hdrs, params={'limit': 50, 'dates': _day.strftime('%Y%m%d')}, timeout=8
+                    )
+                    if not _tres.ok:
+                        continue
+                    for _tev in (_tres.json().get('events') or []):
+                        _tc   = _tev.get('competitions', [{}])[0]
+                        _tc_s = _tc.get('competitors', [])
+                        if len(_tc_s) < 2:
+                            continue
+                        _tp1  = _tc_s[0]
+                        _tp2  = _tc_s[1]
+                        _tn1  = _tp1.get('athlete', {}).get('displayName', '') or _tp1.get('team', {}).get('displayName', '')
+                        _tn2  = _tp2.get('athlete', {}).get('displayName', '') or _tp2.get('team', {}).get('displayName', '')
+                        if not _tn1 or not _tn2:
+                            continue
+                        _tkey = (_tn1, _tn2)
+                        if _tkey in _tennis_seen:
+                            continue
+                        _tennis_seen.add(_tkey)
+                        _tst  = _tc.get('status', {}).get('type', {}).get('name', '')
+                        _ts1  = _tp1.get('score', '')
+                        _ts2  = _tp2.get('score', '')
+                        _rank1 = _tp1.get('athlete', {}).get('rank', 0) or 0
+                        _rank2 = _tp2.get('athlete', {}).get('rank', 0) or 0
+                        _venue = _tev.get('venue', {}).get('surface', 'hard') if _tev.get('venue') else 'hard'
+                        _surface = _venue.lower() if _venue else 'hard'
+                        data.append({
+                            'id':        str(_tev.get('id', '')),
+                            'name':      f'{_tn1} vs {_tn2}',
+                            'date':      _tev.get('date', _day.strftime('%Y-%m-%dT00:00:00Z')),
+                            'status':    _tst,
+                            'league':    _league_id,
+                            'sport':     'tennis',
+                            'homeTeam':  _tn1,
+                            'awayTeam':  _tn2,
+                            'homeScore': '' if _ts1 == '' else str(_ts1),
+                            'awayScore': '' if _ts2 == '' else str(_ts2),
+                            'homeAbbr':  _tp1.get('athlete', {}).get('shortName', _tn1[:3].upper()),
+                            'awayAbbr':  _tp2.get('athlete', {}).get('shortName', _tn2[:3].upper()),
+                            'homeLogo':  _tp1.get('athlete', {}).get('headshot', {}).get('href', ''),
+                            'awayLogo':  _tp2.get('athlete', {}).get('headshot', {}).get('href', ''),
+                            'rankA':     int(_rank1),
+                            'rankB':     int(_rank2),
+                            'surface':   _surface,
+                        })
+        except Exception as _tennis_ex:
+            print(f'[Tennis inline] error: {_tennis_ex}')
+
         # ── Sportradar: partidos en vivo (si hay key configurada) ─
         if sprt._ok():
             sr_live = sprt.get_live_matches()
@@ -596,9 +652,10 @@ def glai_parlay():
             continue
 
         _SPORT_MAP = {'nba': 'basketball', 'mlb': 'baseball', 'nhl': 'nhl',
-                      'soccer': 'soccer', 'basketball': 'basketball', 'baseball': 'baseball'}
-        _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else (3.1 if sport == 'nhl' else 1.4))
-        _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else (2.9 if sport == 'nhl' else 1.1))
+                      'soccer': 'soccer', 'basketball': 'basketball', 'baseball': 'baseball',
+                      'tennis': 'tennis', 'atp': 'tennis', 'wta': 'tennis'}
+        _def_a = 115.0 if sport == 'nba' else (4.5 if sport == 'mlb' else (3.1 if sport == 'nhl' else (50.0 if sport == 'tennis' else 1.4)))
+        _def_b = 112.0 if sport == 'nba' else (4.2 if sport == 'mlb' else (2.9 if sport == 'nhl' else (80.0 if sport == 'tennis' else 1.1)))
         val_a  = calc_auto_xg(team_a, sport, _def_a)
         val_b  = calc_auto_xg(team_b, sport, _def_b)
 
@@ -676,6 +733,21 @@ def glai_parlay():
                 pred   = glai.predict_nhl(val_a, val_b, home_gag=gag_a, away_gag=gag_b, h2h=h2h_p, hist_a=hist_a, hist_b=hist_b)
                 bet    = glai.ai_bet_nhl(pred, team_a, team_b, hist_a, hist_b, h2h=h2h_p)
                 entry.update({'prediction': pred, 'bet': bet, 'valA': val_a, 'valB': val_b})
+                if pick == 'home':   best_p = pred.get('pctA', 50) / 100
+                elif pick == 'away': best_p = pred.get('pctB', 50) / 100
+                else:                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
+
+            elif sport == 'tennis':
+                hist_a = glai.team_history(team_a, limit=8)
+                hist_b = glai.team_history(team_b, limit=8)
+                h2h_p  = db.get_h2h_results(team_a, team_b, limit=6)
+                rank_a = int(m.get('rankA', 0) or val_a or 0)
+                rank_b = int(m.get('rankB', 0) or val_b or 0)
+                surface = m.get('surface', 'hard')
+                pred   = glai.predict_tennis(rank_a, rank_b, surface=surface,
+                                              h2h=h2h_p, hist_a=hist_a, hist_b=hist_b)
+                bet    = glai.ai_bet_tennis(pred, team_a, team_b, hist_a, hist_b, h2h=h2h_p)
+                entry.update({'prediction': pred, 'bet': bet, 'rankA': rank_a, 'rankB': rank_b})
                 if pick == 'home':   best_p = pred.get('pctA', 50) / 100
                 elif pick == 'away': best_p = pred.get('pctB', 50) / 100
                 else:                best_p = max(pred.get('pctA', 50), pred.get('pctB', 50)) / 100
@@ -1218,6 +1290,49 @@ def glai_analyze():
                 'total':      glai.total_learned(),
             })
 
+        # ── TENNIS ──────────────────────────────────────────────────────
+        if sport in ('tennis', 'atp', 'wta'):
+            hist_a = glai.team_history(team_a, limit=8) if team_a else []
+            hist_b = glai.team_history(team_b, limit=8) if team_b else []
+            h2h    = db.get_h2h_results(team_a, team_b, limit=6) if (team_a and team_b) else []
+
+            rank_a  = int(data.get('rankA') or val_a or 50)
+            rank_b  = int(data.get('rankB') or val_b or 80)
+            surface = str(data.get('surface') or 'hard').lower()
+            fmt     = str(data.get('fmt') or data.get('format') or 'bo3').lower()
+
+            n_data  = len(hist_a) + len(hist_b)
+            conf_sc = min(90, round((min(n_data, 20) / 20) * 60
+                          + (10 if h2h else 0)
+                          + (10 if len(hist_a) >= 3 and len(hist_b) >= 3 else 0)))
+
+            prediction = glai.predict_tennis(
+                rank_a, rank_b, surface=surface,
+                h2h=h2h, hist_a=hist_a, hist_b=hist_b,
+                confidence_score=conf_sc, fmt=fmt
+            )
+            bet = glai.ai_bet_tennis(prediction, team_a, team_b,
+                                     hist_a=hist_a, hist_b=hist_b, h2h=h2h)
+            try:
+                db.add_log(u['username'], 'analyze', ip=get_client_ip(),
+                           details=f'{team_a} vs {team_b} | tennis | rank:{rank_a}-{rank_b} surface:{surface}')
+            except Exception:
+                pass
+            return jsonify({
+                'ok':         True,
+                'sport':      'tennis',
+                'tokensLeft': tokens_left,
+                'prediction': prediction,
+                'bet':        bet,
+                'histA':      hist_a,
+                'histB':      hist_b,
+                'rankA':      rank_a,
+                'rankB':      rank_b,
+                'surface':    surface,
+                'fmt':        fmt,
+                'total':      glai.total_learned(),
+            })
+
         # ── SOCCER (default) ────────────────────────────────────────────
         # Historial desde DB local (rápido, sin llamadas externas)
         hist_a = glai.team_history(team_a, limit=8) if team_a else []
@@ -1487,6 +1602,82 @@ def admin_all_logs():
 def admin_user_logs(username):
     logs = db.get_user_logs(username, limit=100)
     return jsonify({'username': username, 'logs': logs})
+
+# ════════════════════════════════════════════════════════════════
+# RUTAS — FEEDBACK DE ANÁLISIS IA
+# ════════════════════════════════════════════════════════════════
+@app.route('/api/glai/feedback', methods=['POST'])
+@require_login
+def submit_feedback():
+    """Guarda si la predicción fue correcta o no. Accesible para todos."""
+    u    = session.get('user', {})
+    data = request.get_json() or {}
+    sport    = data.get('sport', 'soccer')
+    team_a   = data.get('teamA', '')
+    team_b   = data.get('teamB', '')
+    bet_main = data.get('betMain', '')
+    correct  = bool(data.get('correct', False))
+    league   = data.get('league', '')
+
+    if not team_a or not team_b:
+        return jsonify({'error': 'Faltan equipos'}), 400
+
+    db.add_feedback(u['username'], sport, team_a, team_b,
+                    bet_main, correct, league_id=league)
+    try:
+        db.add_log(u['username'], 'feedback',
+                   ip=get_client_ip(),
+                   details=f'{team_a} vs {team_b} | {sport} | correct={correct}')
+    except Exception:
+        pass
+    return jsonify({'ok': True})
+
+@app.route('/api/admin/feedbacks')
+@require_admin
+def admin_get_feedbacks():
+    """Lista todos los feedbacks de análisis."""
+    limit = int(request.args.get('limit', 300))
+    feedbacks = db.get_feedbacks(limit=limit)
+    return jsonify({'feedbacks': feedbacks})
+
+@app.route('/api/admin/feedbacks/<int:fid>/learn', methods=['POST'])
+@require_admin
+def admin_apply_feedback(fid):
+    """
+    Aplica el aprendizaje de un feedback incorrecto.
+    Recibe {actualHome, actualAway, league, sport, teamA, teamB} y
+    llama a glai.learn() para que el modelo incorpore el resultado real.
+    """
+    data        = request.get_json() or {}
+    actual_home = data.get('actualHome')
+    actual_away = data.get('actualAway')
+    league      = data.get('league', 'feedback')
+    sport       = data.get('sport', 'soccer')
+    team_a      = data.get('teamA', '')
+    team_b      = data.get('teamB', '')
+
+    if actual_home is None or actual_away is None:
+        return jsonify({'error': 'Ingresa el resultado real'}), 400
+    try:
+        actual_home = int(actual_home)
+        actual_away = int(actual_away)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'El resultado debe ser numérico'}), 400
+
+    # Guardar resultado real en la base de aprendizaje de GLAI
+    glai.learn(sport, league, team_a, team_b,
+               actual_home, actual_away, source='feedback')
+
+    # Marcar feedback como aprendido
+    row = db.apply_feedback_learning(fid, actual_home, actual_away)
+
+    u = session.get('user', {})
+    try:
+        db.add_log(u['username'], 'feedback_learned', ip=get_client_ip(),
+                   details=f'{team_a} vs {team_b} | {sport} | {actual_home}-{actual_away}')
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'feedback': row})
 
 # ════════════════════════════════════════════════════════════════
 # RUTAS — PARTIDOS CLAVE (alertas VIP)
