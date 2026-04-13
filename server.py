@@ -1607,7 +1607,7 @@ def admin_user_logs(username):
 # RUTAS — FEEDBACK DE ANÁLISIS IA
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/glai/feedback', methods=['POST'])
-@require_login
+@require_admin
 def submit_feedback():
     """Guarda si la predicción fue correcta o no. Accesible para todos."""
     u    = session.get('user', {})
