@@ -742,6 +742,26 @@ nav button.active{font-weight:700}
         <div class="narrative" id="narrative"></div>
       </div>
 
+      <!-- ✅ Feedback de predicción -->
+      <div class="card" id="feedbackCard" style="display:none;border-color:rgba(33,150,243,.35)">
+        <h2 style="margin-bottom:12px">💬 ¿Fue correcta la predicción?</h2>
+        <div id="feedbackContent">
+          <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">
+            Tu respuesta ayuda a mejorar el modelo de IA.
+          </p>
+          <div style="display:flex;gap:14px;justify-content:center">
+            <button id="fbYes" onclick="submitFeedback(true)"
+              style="background:linear-gradient(135deg,#1b5e20,#388e3c);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:1rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px">
+              ✅ SÍ, acertó
+            </button>
+            <button id="fbNo" onclick="submitFeedback(false)"
+              style="background:linear-gradient(135deg,#b71c1c,#c62828);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:1rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px">
+              ❌ NO, falló
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Stats de liga -->
       <div class="card" id="lgCard" style="display:none">
         <h2>📈 Estadísticas de Liga (GLAI aprendió)</h2>
@@ -967,6 +987,23 @@ nav button.active{font-weight:700}
       <div id="scanResult" style="margin-top:10px"></div>
     </div>
 
+    <!-- 💬 Feedback de predicciones -->
+    <div class="card" style="border-color:rgba(33,150,243,.35)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <h2 style="margin:0">💬 Feedback de Predicciones</h2>
+        <button class="btn btn-sm btn-blue" onclick="loadFeedbacks()">🔄 Actualizar</button>
+      </div>
+      <p style="color:var(--muted);font-size:.83rem;margin-bottom:14px">
+        Cuando una predicción falla, ingresa el resultado real para que GLAI aprenda de ese error.
+      </p>
+      <div id="feedbackStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+      <div id="feedbackList" style="overflow-x:auto">
+        <p style="color:var(--muted);font-size:.85rem;text-align:center;padding:20px">
+          Pulsa "Actualizar" para ver el historial de feedback.
+        </p>
+      </div>
+    </div>
+
     <!-- API Keys -->
     <div class="card">
       <h2>🔑 API Keys</h2>
@@ -1078,6 +1115,32 @@ nav button.active{font-weight:700}
     </div>
 
   </div>
+<!-- ── MODAL FEEDBACK: RESULTADO REAL ────────────────── -->
+<div id="learnModal" style="display:none;position:fixed;inset:0;background:#000b;z-index:1001;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;width:380px;max-width:95vw">
+    <h2 style="margin-bottom:6px;font-size:1.05rem">📚 Enseñar resultado real a GLAI</h2>
+    <p id="learnModalDesc" style="font-size:.82rem;color:var(--muted);margin-bottom:18px"></p>
+    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;justify-content:center">
+      <div style="text-align:center">
+        <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:4px">Local</label>
+        <input id="learnHome" type="number" min="0" max="50" value="0"
+          style="width:80px;text-align:center;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:1.4rem;font-weight:900"/>
+      </div>
+      <div style="font-size:1.8rem;font-weight:900;color:var(--muted)">–</div>
+      <div style="text-align:center">
+        <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:4px">Visitante</label>
+        <input id="learnAway" type="number" min="0" max="50" value="0"
+          style="width:80px;text-align:center;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:1.4rem;font-weight:900"/>
+      </div>
+    </div>
+    <div id="learnMsg" style="min-height:18px;margin-bottom:12px;font-size:.82rem;text-align:center"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-green" style="flex:1" onclick="applyLearn()">✅ Aplicar aprendizaje</button>
+      <button class="btn" style="flex:1;background:#333;color:#ccc" onclick="hideLearnModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── MODAL CAMBIAR CONTRASEÑA ──────────────────────── -->
 <div id="pwModal" style="display:none;position:fixed;inset:0;background:#000a;z-index:1000;align-items:center;justify-content:center">
   <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px;width:340px;max-width:95vw">
@@ -1280,6 +1343,7 @@ function showPage(id) {
   if (id === 'admin' && currentUser?.role === 'admin') {
     loadUsers();
     loadKeys();
+    loadFeedbacks();
   }
   if (id === 'parlay') {
     loadParlayMatches();
@@ -1635,6 +1699,38 @@ function updateTokenDisplay(tokensLeft) {
 
 function onTeamInput() {
   document.getElementById('glaiResults').style.display = 'none';
+  document.getElementById('feedbackCard').style.display = 'none';
+}
+
+// ── Contexto del último análisis (para feedback) ──────────────
+let _lastAnalysis = null;
+
+async function submitFeedback(correct) {
+  if (!_lastAnalysis) return;
+  const fc = document.getElementById('feedbackContent');
+  // Deshabilitar botones
+  document.getElementById('fbYes').disabled = true;
+  document.getElementById('fbNo').disabled  = true;
+  try {
+    await apiFetch('/api/glai/feedback', {
+      method: 'POST',
+      body: JSON.stringify({
+        sport:   _lastAnalysis.sport,
+        teamA:   _lastAnalysis.teamA,
+        teamB:   _lastAnalysis.teamB,
+        betMain: _lastAnalysis.betMain,
+        league:  _lastAnalysis.league,
+        correct,
+      })
+    });
+    if (correct) {
+      fc.innerHTML = '<div style="text-align:center;padding:16px;font-size:1.05rem;color:var(--green)">✅ ¡Gracias! Eso refuerza el modelo.</div>';
+    } else {
+      fc.innerHTML = '<div style="text-align:center;padding:16px;font-size:.92rem;color:#ef9a9a">❌ Registrado como fallo. El admin puede ingresar el resultado real desde ⚙️ Admin → Feedback para que GLAI aprenda.</div>';
+    }
+  } catch(e) {
+    fc.innerHTML = '<div style="color:var(--muted);text-align:center;font-size:.82rem;padding:10px">No se pudo guardar el feedback.</div>';
+  }
 }
 
 async function runGlai() {
@@ -1679,6 +1775,31 @@ async function runGlai() {
     else if (sport === 'mlb') renderGlaiMLB(d, teamA, teamB);
     else if (sport === 'nhl') renderGlaiNHL(d, teamA, teamB);
     else renderGlai(d, teamA, teamB);
+
+    // Guardar contexto del análisis y mostrar tarjeta de feedback
+    _lastAnalysis = {
+      sport,
+      teamA,
+      teamB,
+      betMain: d.bet?.best?.bet || '',
+      league: document.getElementById('leagueSel')?.value || '',
+    };
+    const fc = document.getElementById('feedbackCard');
+    fc.style.display = '';
+    document.getElementById('feedbackContent').innerHTML = `
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">
+        Tu respuesta ayuda a mejorar el modelo de IA.
+      </p>
+      <div style="display:flex;gap:14px;justify-content:center">
+        <button id="fbYes" onclick="submitFeedback(true)"
+          style="background:linear-gradient(135deg,#1b5e20,#388e3c);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:1rem;font-weight:700;cursor:pointer">
+          ✅ SÍ, acertó
+        </button>
+        <button id="fbNo" onclick="submitFeedback(false)"
+          style="background:linear-gradient(135deg,#b71c1c,#c62828);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:1rem;font-weight:700;cursor:pointer">
+          ❌ NO, falló
+        </button>
+      </div>`;
   } catch (e) {
     document.getElementById('tokenWarn').style.display = '';
     document.getElementById('tokenWarn').innerHTML =
@@ -2973,6 +3094,120 @@ async function triggerScan() {
   const el = document.getElementById('scanResult');
   el.innerHTML = `<div class="alert ${d.ok ? 'alert-green' : 'alert-orange'}">${d.msg || d.error}</div>`;
   if (d.ok) loadStats();
+}
+
+// ════════════════════════════════════════════════════
+// ADMIN — FEEDBACK DE PREDICCIONES
+// ════════════════════════════════════════════════════
+let _learnCtx = null;  // contexto del feedback que se va a enseñar
+
+async function loadFeedbacks() {
+  const r = await apiFetch('/api/admin/feedbacks');
+  if (!r.ok) return;
+  const d = await r.json();
+  const list = d.feedbacks || [];
+
+  // Estadísticas rápidas
+  const total   = list.length;
+  const correct = list.filter(f => f.correct === 1).length;
+  const wrong   = list.filter(f => f.correct === 0).length;
+  const learned = list.filter(f => f.learned_at).length;
+  const pct     = total > 0 ? Math.round(correct / total * 100) : 0;
+  const pctColor = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)';
+
+  document.getElementById('feedbackStats').innerHTML = `
+    <span class="tag" style="background:#1b5e2033;color:var(--green);border:1px solid var(--green)44">✅ Correctas: ${correct}</span>
+    <span class="tag" style="background:#b71c1c33;color:#ef9a9a;border:1px solid #ef5350aa">❌ Fallidas: ${wrong}</span>
+    <span class="tag" style="background:#01579b33;color:var(--blue);border:1px solid var(--blue)44">📚 Aprendidas: ${learned}</span>
+    <span class="tag" style="background:${pctColor}22;color:${pctColor};border:1px solid ${pctColor}55">🎯 Precisión: ${pct}%</span>`;
+
+  if (list.length === 0) {
+    document.getElementById('feedbackList').innerHTML =
+      '<p style="color:var(--muted);text-align:center;padding:20px">No hay feedback registrado aún.</p>';
+    return;
+  }
+
+  const rows = list.map(f => {
+    const isCorrect = f.correct === 1;
+    const isLearned = !!f.learned_at;
+    const date = (f.created_at || '').slice(0, 16).replace('T', ' ');
+    const learnBtn = (!isCorrect && !isLearned)
+      ? `<button onclick='showLearnModal(${JSON.stringify(f)})' class="btn btn-sm btn-blue" style="font-size:.75rem;padding:4px 10px">📚 Enseñar</button>`
+      : (isLearned ? `<span style="color:var(--green);font-size:.78rem">✅ Aprendido</span>` : '');
+    return `
+      <tr>
+        <td style="font-size:.78rem;color:var(--muted);white-space:nowrap">${date}</td>
+        <td><span class="tag tag-blue" style="font-size:.72rem">${f.sport?.toUpperCase()}</span></td>
+        <td style="font-size:.82rem">${f.team_a} vs ${f.team_b}</td>
+        <td style="font-size:.78rem;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis">${f.bet_main || '—'}</td>
+        <td style="text-align:center">${isCorrect ? '✅' : '❌'}</td>
+        <td>${learnBtn}</td>
+      </tr>`;
+  }).join('');
+
+  document.getElementById('feedbackList').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead>
+        <tr style="color:var(--muted);font-size:.72rem;text-transform:uppercase;border-bottom:1px solid var(--border)">
+          <th style="padding:6px 8px;text-align:left">Fecha</th>
+          <th style="padding:6px 8px;text-align:left">Deporte</th>
+          <th style="padding:6px 8px;text-align:left">Partido</th>
+          <th style="padding:6px 8px;text-align:left">Apuesta sugerida</th>
+          <th style="padding:6px 8px;text-align:center">¿Acertó?</th>
+          <th style="padding:6px 8px;text-align:left">Acción</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function showLearnModal(fb) {
+  _learnCtx = fb;
+  document.getElementById('learnModalDesc').textContent =
+    `${fb.team_a} vs ${fb.team_b} (${fb.sport?.toUpperCase()}) — ¿Cuál fue el marcador real?`;
+  document.getElementById('learnHome').value = 0;
+  document.getElementById('learnAway').value = 0;
+  document.getElementById('learnMsg').textContent = '';
+  const m = document.getElementById('learnModal');
+  m.style.display = 'flex';
+}
+
+function hideLearnModal() {
+  document.getElementById('learnModal').style.display = 'none';
+  _learnCtx = null;
+}
+
+async function applyLearn() {
+  if (!_learnCtx) return;
+  const home = parseInt(document.getElementById('learnHome').value);
+  const away = parseInt(document.getElementById('learnAway').value);
+  const msg  = document.getElementById('learnMsg');
+  msg.textContent = 'Aplicando...';
+  try {
+    const r = await apiFetch(`/api/admin/feedbacks/${_learnCtx.id}/learn`, {
+      method: 'POST',
+      body: JSON.stringify({
+        actualHome: home,
+        actualAway: away,
+        sport:  _learnCtx.sport  || 'soccer',
+        teamA:  _learnCtx.team_a || '',
+        teamB:  _learnCtx.team_b || '',
+        league: _learnCtx.league_id || 'feedback',
+      })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      msg.style.color = 'var(--green)';
+      msg.textContent = `✅ GLAI aprendió: ${_learnCtx.team_a} ${home} – ${away} ${_learnCtx.team_b}`;
+      setTimeout(() => { hideLearnModal(); loadFeedbacks(); }, 1400);
+    } else {
+      msg.style.color = 'var(--red)';
+      msg.textContent = d.error || 'Error al aplicar';
+    }
+  } catch(e) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Error de conexión';
+  }
 }
 
 // ════════════════════════════════════════════════════
