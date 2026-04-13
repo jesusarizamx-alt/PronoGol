@@ -1120,17 +1120,17 @@ nav button.active{font-weight:700}
   <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;width:380px;max-width:95vw">
     <h2 style="margin-bottom:6px;font-size:1.05rem">📚 Enseñar resultado real a GLAI</h2>
     <p id="learnModalDesc" style="font-size:.82rem;color:var(--muted);margin-bottom:18px"></p>
-    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;justify-content:center">
+    <div style="display:flex;gap:14px;margin-bottom:16px;align-items:center;justify-content:center">
       <div style="text-align:center">
-        <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:4px">Local</label>
-        <input id="learnHome" type="number" min="0" max="50" value="0"
-          style="width:80px;text-align:center;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:1.4rem;font-weight:900"/>
+        <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:6px">🏠 Local</label>
+        <input id="learnHome" type="number" min="0" max="200" placeholder="0"
+          style="width:88px;text-align:center;background:#0d1117;border:2px solid var(--blue);color:var(--text);border-radius:10px;padding:12px 8px;font-size:1.6rem;font-weight:900;outline:none"/>
       </div>
-      <div style="font-size:1.8rem;font-weight:900;color:var(--muted)">–</div>
+      <div style="font-size:2rem;font-weight:900;color:var(--muted);padding-top:22px">–</div>
       <div style="text-align:center">
-        <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:4px">Visitante</label>
-        <input id="learnAway" type="number" min="0" max="50" value="0"
-          style="width:80px;text-align:center;background:#0d1117;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:1.4rem;font-weight:900"/>
+        <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:6px">✈️ Visitante</label>
+        <input id="learnAway" type="number" min="0" max="200" placeholder="0"
+          style="width:88px;text-align:center;background:#0d1117;border:2px solid var(--blue);color:var(--text);border-radius:10px;padding:12px 8px;font-size:1.6rem;font-weight:900;outline:none"/>
       </div>
     </div>
     <div id="learnMsg" style="min-height:18px;margin-bottom:12px;font-size:.82rem;text-align:center"></div>
@@ -1776,7 +1776,7 @@ async function runGlai() {
     else if (sport === 'nhl') renderGlaiNHL(d, teamA, teamB);
     else renderGlai(d, teamA, teamB);
 
-    // Guardar contexto del análisis y mostrar tarjeta de feedback
+    // Guardar contexto del análisis — solo admin ve el card de feedback
     _lastAnalysis = {
       sport,
       teamA,
@@ -1784,22 +1784,26 @@ async function runGlai() {
       betMain: d.bet?.best?.bet || '',
       league: document.getElementById('leagueSel')?.value || '',
     };
-    const fc = document.getElementById('feedbackCard');
-    fc.style.display = '';
-    document.getElementById('feedbackContent').innerHTML = `
-      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">
-        Tu respuesta ayuda a mejorar el modelo de IA.
-      </p>
-      <div style="display:flex;gap:14px;justify-content:center">
-        <button id="fbYes" onclick="submitFeedback(true)"
-          style="background:linear-gradient(135deg,#1b5e20,#388e3c);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:1rem;font-weight:700;cursor:pointer">
-          ✅ SÍ, acertó
-        </button>
-        <button id="fbNo" onclick="submitFeedback(false)"
-          style="background:linear-gradient(135deg,#b71c1c,#c62828);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:1rem;font-weight:700;cursor:pointer">
-          ❌ NO, falló
-        </button>
-      </div>`;
+    if (currentUser?.role === 'admin') {
+      const fc = document.getElementById('feedbackCard');
+      fc.style.display = '';
+      document.getElementById('feedbackContent').innerHTML = `
+        <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">
+          ¿Fue correcta la predicción? Tu respuesta entrena el modelo de IA.
+        </p>
+        <div style="display:flex;gap:14px;justify-content:center">
+          <button id="fbYes" onclick="submitFeedback(true)"
+            style="background:linear-gradient(135deg,#1b5e20,#388e3c);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:1rem;font-weight:700;cursor:pointer">
+            ✅ SÍ, acertó
+          </button>
+          <button id="fbNo" onclick="submitFeedback(false)"
+            style="background:linear-gradient(135deg,#b71c1c,#c62828);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:1rem;font-weight:700;cursor:pointer">
+            ❌ NO, falló
+          </button>
+        </div>`;
+    } else {
+      document.getElementById('feedbackCard').style.display = 'none';
+    }
   } catch (e) {
     document.getElementById('tokenWarn').style.display = '';
     document.getElementById('tokenWarn').innerHTML =
@@ -3099,56 +3103,85 @@ async function triggerScan() {
 // ════════════════════════════════════════════════════
 // ADMIN — FEEDBACK DE PREDICCIONES
 // ════════════════════════════════════════════════════
-let _learnCtx = null;  // contexto del feedback que se va a enseñar
+// Guardamos la lista en memoria para evitar JSON.stringify en onclick
+let _fbStore  = [];
+let _learnCtx = null;
 
 async function loadFeedbacks() {
-  const r = await apiFetch('/api/admin/feedbacks');
-  if (!r.ok) return;
-  const d = await r.json();
-  const list = d.feedbacks || [];
+  const listEl  = document.getElementById('feedbackList');
+  const statsEl = document.getElementById('feedbackStats');
+  listEl.innerHTML = '<p style="color:var(--muted);font-size:.83rem;text-align:center;padding:16px">Cargando...</p>';
 
-  // Estadísticas rápidas
-  const total   = list.length;
-  const correct = list.filter(f => f.correct === 1).length;
-  const wrong   = list.filter(f => f.correct === 0).length;
-  const learned = list.filter(f => f.learned_at).length;
-  const pct     = total > 0 ? Math.round(correct / total * 100) : 0;
+  let r;
+  try { r = await apiFetch('/api/admin/feedbacks'); }
+  catch(e) {
+    listEl.innerHTML = '<p style="color:var(--red);text-align:center;padding:16px">Error de conexión</p>';
+    return;
+  }
+  if (!r.ok) {
+    listEl.innerHTML = '<p style="color:var(--red);text-align:center;padding:16px">Error al cargar feedbacks</p>';
+    return;
+  }
+  const d = await r.json();
+  _fbStore = d.feedbacks || [];
+
+  // ── Estadísticas rápidas ──────────────────────────────────
+  const total   = _fbStore.length;
+  const nOk     = _fbStore.filter(f => f.correct === 1).length;
+  const nWrong  = _fbStore.filter(f => f.correct === 0).length;
+  const nLearn  = _fbStore.filter(f => !!f.learned_at).length;
+  const nPend   = nWrong - nLearn;   // incorrectas sin aprender aún
+  const pct     = total > 0 ? Math.round(nOk / total * 100) : 0;
   const pctColor = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)';
 
-  document.getElementById('feedbackStats').innerHTML = `
-    <span class="tag" style="background:#1b5e2033;color:var(--green);border:1px solid var(--green)44">✅ Correctas: ${correct}</span>
-    <span class="tag" style="background:#b71c1c33;color:#ef9a9a;border:1px solid #ef5350aa">❌ Fallidas: ${wrong}</span>
-    <span class="tag" style="background:#01579b33;color:var(--blue);border:1px solid var(--blue)44">📚 Aprendidas: ${learned}</span>
+  statsEl.innerHTML = `
+    <span class="tag" style="background:#1b5e2033;color:var(--green);border:1px solid #4caf5055">✅ Correctas: ${nOk}</span>
+    <span class="tag" style="background:#b71c1c33;color:#ef9a9a;border:1px solid #ef535099">❌ Fallidas: ${nWrong}</span>
+    <span class="tag" style="background:#01579b33;color:var(--blue);border:1px solid var(--blue)55">📚 Aprendidas: ${nLearn}</span>
+    ${nPend > 0 ? `<span class="tag" style="background:#e65100aa;color:#ffe0b2;border:1px solid #ff980099">⚠️ Pendientes: ${nPend}</span>` : ''}
     <span class="tag" style="background:${pctColor}22;color:${pctColor};border:1px solid ${pctColor}55">🎯 Precisión: ${pct}%</span>`;
 
-  if (list.length === 0) {
-    document.getElementById('feedbackList').innerHTML =
-      '<p style="color:var(--muted);text-align:center;padding:20px">No hay feedback registrado aún.</p>';
+  if (total === 0) {
+    listEl.innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px">No hay feedback registrado aún.<br><span style="font-size:.78rem">Después de cada análisis aparece un botón para calificarlo.</span></p>';
     return;
   }
 
-  const rows = list.map(f => {
-    const isCorrect = f.correct === 1;
-    const isLearned = !!f.learned_at;
-    const date = (f.created_at || '').slice(0, 16).replace('T', ' ');
-    const learnBtn = (!isCorrect && !isLearned)
-      ? `<button onclick='showLearnModal(${JSON.stringify(f)})' class="btn btn-sm btn-blue" style="font-size:.75rem;padding:4px 10px">📚 Enseñar</button>`
-      : (isLearned ? `<span style="color:var(--green);font-size:.78rem">✅ Aprendido</span>` : '');
+  // ── Tabla de feedbacks ────────────────────────────────────
+  const rows = _fbStore.map((f, idx) => {
+    const isCorrecto = f.correct === 1;
+    const isLearned  = !!f.learned_at;
+    const date       = (f.created_at || '').slice(0, 16).replace('T', ' ');
+    const sportTag   = (f.sport || 'soccer').toUpperCase();
+
+    // Solo mostrar "Enseñar" si fue incorrecta Y no se ha aprendido aún
+    let accion = '';
+    if (!isCorrecto && !isLearned) {
+      accion = `<button onclick="showLearnModal(${idx})"
+        class="btn btn-sm btn-blue"
+        style="font-size:.76rem;padding:5px 12px;white-space:nowrap">
+        📚 Enseñar resultado
+      </button>`;
+    } else if (isLearned) {
+      const score = (f.actual_home !== null && f.actual_away !== null)
+        ? ` (${f.actual_home}–${f.actual_away})` : '';
+      accion = `<span style="color:var(--green);font-size:.78rem">✅ Aprendido${score}</span>`;
+    }
+
     return `
-      <tr>
-        <td style="font-size:.78rem;color:var(--muted);white-space:nowrap">${date}</td>
-        <td><span class="tag tag-blue" style="font-size:.72rem">${f.sport?.toUpperCase()}</span></td>
-        <td style="font-size:.82rem">${f.team_a} vs ${f.team_b}</td>
-        <td style="font-size:.78rem;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis">${f.bet_main || '—'}</td>
-        <td style="text-align:center">${isCorrect ? '✅' : '❌'}</td>
-        <td>${learnBtn}</td>
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:7px 8px;font-size:.76rem;color:var(--muted);white-space:nowrap">${date}</td>
+        <td style="padding:7px 8px"><span class="tag tag-blue" style="font-size:.7rem">${sportTag}</span></td>
+        <td style="padding:7px 8px;font-size:.82rem;white-space:nowrap">${f.team_a} vs ${f.team_b}</td>
+        <td style="padding:7px 8px;font-size:.76rem;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.bet_main || '—'}</td>
+        <td style="padding:7px 8px;text-align:center;font-size:1.1rem">${isCorrecto ? '✅' : '❌'}</td>
+        <td style="padding:7px 8px">${accion}</td>
       </tr>`;
   }).join('');
 
-  document.getElementById('feedbackList').innerHTML = `
+  listEl.innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:.82rem">
       <thead>
-        <tr style="color:var(--muted);font-size:.72rem;text-transform:uppercase;border-bottom:1px solid var(--border)">
+        <tr style="color:var(--muted);font-size:.7rem;text-transform:uppercase;border-bottom:2px solid var(--border)">
           <th style="padding:6px 8px;text-align:left">Fecha</th>
           <th style="padding:6px 8px;text-align:left">Deporte</th>
           <th style="padding:6px 8px;text-align:left">Partido</th>
@@ -3161,15 +3194,21 @@ async function loadFeedbacks() {
     </table>`;
 }
 
-function showLearnModal(fb) {
+function showLearnModal(idx) {
+  // Recuperamos el feedback desde el store (sin JSON.stringify en onclick)
+  const fb = _fbStore[idx];
+  if (!fb) return;
   _learnCtx = fb;
+
   document.getElementById('learnModalDesc').textContent =
-    `${fb.team_a} vs ${fb.team_b} (${fb.sport?.toUpperCase()}) — ¿Cuál fue el marcador real?`;
-  document.getElementById('learnHome').value = 0;
-  document.getElementById('learnAway').value = 0;
+    `${fb.team_a} vs ${fb.team_b} (${(fb.sport || 'soccer').toUpperCase()}) — ¿Cuál fue el resultado real?`;
+  document.getElementById('learnHome').value = '';
+  document.getElementById('learnAway').value = '';
   document.getElementById('learnMsg').textContent = '';
-  const m = document.getElementById('learnModal');
-  m.style.display = 'flex';
+  document.getElementById('learnMsg').style.color = '';
+  document.getElementById('learnModal').style.display = 'flex';
+  // Dar foco al primer input
+  setTimeout(() => document.getElementById('learnHome').focus(), 80);
 }
 
 function hideLearnModal() {
@@ -3179,34 +3218,50 @@ function hideLearnModal() {
 
 async function applyLearn() {
   if (!_learnCtx) return;
-  const home = parseInt(document.getElementById('learnHome').value);
-  const away = parseInt(document.getElementById('learnAway').value);
-  const msg  = document.getElementById('learnMsg');
-  msg.textContent = 'Aplicando...';
+  const homeVal = document.getElementById('learnHome').value;
+  const awayVal = document.getElementById('learnAway').value;
+  const msg     = document.getElementById('learnMsg');
+
+  if (homeVal === '' || awayVal === '') {
+    msg.style.color = 'var(--orange)';
+    msg.textContent = 'Ingresa el resultado real (puede ser 0)';
+    return;
+  }
+  const home = parseInt(homeVal);
+  const away = parseInt(awayVal);
+  if (isNaN(home) || isNaN(away)) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Solo se aceptan números enteros';
+    return;
+  }
+
+  msg.style.color = 'var(--muted)';
+  msg.textContent = '⏳ Aplicando aprendizaje...';
+
   try {
     const r = await apiFetch(`/api/admin/feedbacks/${_learnCtx.id}/learn`, {
       method: 'POST',
       body: JSON.stringify({
         actualHome: home,
         actualAway: away,
-        sport:  _learnCtx.sport  || 'soccer',
-        teamA:  _learnCtx.team_a || '',
-        teamB:  _learnCtx.team_b || '',
-        league: _learnCtx.league_id || 'feedback',
+        sport:  _learnCtx.sport      || 'soccer',
+        teamA:  _learnCtx.team_a     || '',
+        teamB:  _learnCtx.team_b     || '',
+        league: _learnCtx.league_id  || 'feedback',
       })
     });
     const d = await r.json();
     if (d.ok) {
       msg.style.color = 'var(--green)';
-      msg.textContent = `✅ GLAI aprendió: ${_learnCtx.team_a} ${home} – ${away} ${_learnCtx.team_b}`;
-      setTimeout(() => { hideLearnModal(); loadFeedbacks(); }, 1400);
+      msg.textContent = `✅ ¡GLAI aprendió! ${_learnCtx.team_a} ${home} – ${away} ${_learnCtx.team_b}`;
+      setTimeout(() => { hideLearnModal(); loadFeedbacks(); }, 1600);
     } else {
       msg.style.color = 'var(--red)';
       msg.textContent = d.error || 'Error al aplicar';
     }
   } catch(e) {
     msg.style.color = 'var(--red)';
-    msg.textContent = 'Error de conexión';
+    msg.textContent = 'Error de conexión. Intenta de nuevo.';
   }
 }
 
