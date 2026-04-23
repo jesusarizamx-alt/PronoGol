@@ -418,24 +418,25 @@ def matches():
         except Exception as _tennis_ex:
             print(f'[Tennis inline] error: {_tennis_ex}')
 
-        # ── Sportradar: partidos en vivo (si hay key configurada) ─
+        # ── Sportradar: hoy + mañana (La Liga, Premier, Champions, etc.) ─
         if sprt._ok():
-            sr_live = sprt.get_live_matches()
-            if sr_live:
+            sr_matches = sprt.get_upcoming_matches(days_ahead=1)  # hoy + mañana
+            if sr_matches:
                 existing = {(m['homeTeam'], m['awayTeam']) for m in data}
-                for m in sr_live:
+                for m in sr_matches:
                     key = (m['homeTeam'], m['awayTeam'])
                     if key not in existing:
                         data.append(m)
                         existing.add(key)
                     else:
-                        # Actualizar score con datos de Sportradar (más precisos)
+                        # Actualizar score/clock con datos de Sportradar (más precisos)
                         for i, em in enumerate(data):
                             if (em['homeTeam'], em['awayTeam']) == key:
-                                data[i]['homeScore'] = m['homeScore']
-                                data[i]['awayScore'] = m['awayScore']
-                                data[i]['clock']     = m.get('clock', '')
-                                data[i]['period']    = m.get('period', 0)
+                                if m['status'] == 'in':
+                                    data[i]['homeScore'] = m['homeScore']
+                                    data[i]['awayScore'] = m['awayScore']
+                                    data[i]['clock']     = m.get('clock', '')
+                                    data[i]['period']    = m.get('period', 0)
                                 break
 
         # ── Fixtures futuros (soccer de TheSportsDB/FootballData) ─
@@ -532,18 +533,18 @@ def sportradar_debug():
     # Prueba múltiples URLs para encontrar la correcta
     results = []
     if active_key:
-        from datetime import datetime
+        from datetime import datetime, timedelta
         today = datetime.utcnow().strftime('%Y-%m-%d')
         hdrs  = {'Accept': 'application/json', 'x-api-key': active_key}
         urls_to_try = [
             # Soccer — endpoints base
             ('Soccer competitions',       f"https://api.sportradar.com/soccer/trial/v4/en/competitions.json"),
-            ('Soccer live schedule',      f"https://api.sportradar.com/soccer/trial/v4/en/schedules/live/schedule.json"),
+            ('Soccer live summaries',     f"https://api.sportradar.com/soccer/trial/v4/en/schedules/live/summaries.json"),
             # Soccer — endpoints de scan (seasons/summaries)
             ('Soccer Premier seasons',    f"https://api.sportradar.com/soccer/trial/v4/en/competitions/sr:competition:17/seasons.json"),
-            ('Soccer schedule hoy',       f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/schedule.json"),
-            ('Soccer schedule resultados',f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/results.json"),
+            ('Soccer La Liga seasons',    f"https://api.sportradar.com/soccer/trial/v4/en/competitions/sr:competition:18/seasons.json"),
             ('Soccer summaries hoy',      f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{today}/summaries.json"),
+            ('Soccer summaries mañana',   f"https://api.sportradar.com/soccer/trial/v4/en/schedules/{(datetime.utcnow() + timedelta(days=1)).strftime('%Y-%m-%d')}/summaries.json"),
             # NBA
             ('NBA schedule hoy',          f"https://api.sportradar.com/nba/trial/v8/en/games/{today[:4]}/{today[5:7]}/{today[8:]}/schedule.json"),
             # MLB
