@@ -176,6 +176,26 @@ class SportradarScraper:
         """Partidos Soccer en vivo ahora mismo (filtrado de summaries de hoy)."""
         return [m for m in self.get_today_schedule() if m['status'] == 'in']
 
+    def get_upcoming_matches(self, days_ahead=1):
+        """
+        Partidos programados de hoy + próximos días.
+        Incluye La Liga, Premier, Champions, etc.
+        Útil para mostrar fixtures futuros en pronósticos.
+        """
+        all_matches = []
+        seen = set()
+        for i in range(days_ahead + 1):
+            date_str = (datetime.utcnow() + timedelta(days=i)).strftime('%Y-%m-%d')
+            matches = self.get_summaries_by_date(date_str)
+            for m in matches:
+                key = (m['homeTeam'], m['awayTeam'])
+                if key not in seen:
+                    seen.add(key)
+                    all_matches.append(m)
+            if i < days_ahead:
+                time.sleep(1.2)  # respetar rate limit entre fechas
+        return all_matches
+
     # ── Competencias ──────────────────────────────────────────────
     def get_competitions(self):
         """Lista de competencias — confirmado 200 en trial."""
