@@ -38,6 +38,86 @@ LEAGUE_MAP = {
 }
 
 
+# ── Cache de logos (en memoria, dura lo que dure el proceso) ────────
+_LOGO_CACHE = {}
+
+# Logos de equipos famosos para no hacer llamadas innecesarias
+_KNOWN_LOGOS = {
+    # La Liga
+    'barcelona':          'https://a.espncdn.com/i/teamlogos/soccer/500/83.png',
+    'real madrid':        'https://a.espncdn.com/i/teamlogos/soccer/500/86.png',
+    'atletico madrid':    'https://a.espncdn.com/i/teamlogos/soccer/500/1068.png',
+    'sevilla':            'https://a.espncdn.com/i/teamlogos/soccer/500/243.png',
+    'villarreal':         'https://a.espncdn.com/i/teamlogos/soccer/500/449.png',
+    'real sociedad':      'https://a.espncdn.com/i/teamlogos/soccer/500/16.png',
+    'athletic bilbao':    'https://a.espncdn.com/i/teamlogos/soccer/500/93.png',
+    'betis':              'https://a.espncdn.com/i/teamlogos/soccer/500/244.png',
+    'real betis':         'https://a.espncdn.com/i/teamlogos/soccer/500/244.png',
+    'valencia':           'https://a.espncdn.com/i/teamlogos/soccer/500/94.png',
+    'getafe':             'https://a.espncdn.com/i/teamlogos/soccer/500/9812.png',
+    'osasuna':            'https://a.espncdn.com/i/teamlogos/soccer/500/245.png',
+    'girona':             'https://a.espncdn.com/i/teamlogos/soccer/500/9817.png',
+    # Premier League
+    'manchester city':    'https://a.espncdn.com/i/teamlogos/soccer/500/382.png',
+    'manchester united':  'https://a.espncdn.com/i/teamlogos/soccer/500/360.png',
+    'arsenal':            'https://a.espncdn.com/i/teamlogos/soccer/500/359.png',
+    'liverpool':          'https://a.espncdn.com/i/teamlogos/soccer/500/364.png',
+    'chelsea':            'https://a.espncdn.com/i/teamlogos/soccer/500/363.png',
+    'tottenham':          'https://a.espncdn.com/i/teamlogos/soccer/500/367.png',
+    'newcastle':          'https://a.espncdn.com/i/teamlogos/soccer/500/361.png',
+    'aston villa':        'https://a.espncdn.com/i/teamlogos/soccer/500/362.png',
+    # Champions League / otros grandes
+    'psg':                'https://a.espncdn.com/i/teamlogos/soccer/500/160.png',
+    'paris saint-germain':'https://a.espncdn.com/i/teamlogos/soccer/500/160.png',
+    'bayern munich':      'https://a.espncdn.com/i/teamlogos/soccer/500/132.png',
+    'borussia dortmund':  'https://a.espncdn.com/i/teamlogos/soccer/500/124.png',
+    'juventus':           'https://a.espncdn.com/i/teamlogos/soccer/500/111.png',
+    'inter':              'https://a.espncdn.com/i/teamlogos/soccer/500/110.png',
+    'ac milan':           'https://a.espncdn.com/i/teamlogos/soccer/500/109.png',
+    'napoli':             'https://a.espncdn.com/i/teamlogos/soccer/500/113.png',
+    'benfica':            'https://a.espncdn.com/i/teamlogos/soccer/500/182.png',
+    'porto':              'https://a.espncdn.com/i/teamlogos/soccer/500/183.png',
+    'ajax':               'https://a.espncdn.com/i/teamlogos/soccer/500/194.png',
+}
+
+def _get_team_logo(team_name: str) -> str:
+    """
+    Devuelve la URL del logo de un equipo.
+    1. Busca en logos conocidos (instantáneo).
+    2. Busca en caché en memoria.
+    3. Consulta TheSportsDB (gratuito, sin key).
+    """
+    key = team_name.lower().strip()
+
+    # 1. Logos conocidos
+    for known, url in _KNOWN_LOGOS.items():
+        if known in key or key in known:
+            return url
+
+    # 2. Caché en memoria
+    if key in _LOGO_CACHE:
+        return _LOGO_CACHE[key]
+
+    # 3. TheSportsDB API (gratuita)
+    try:
+        r = requests.get(
+            'https://www.thesportsdb.com/api/v1/json/3/searchteams.php',
+            params={'t': team_name},
+            timeout=5
+        )
+        if r.ok:
+            teams = r.json().get('teams') or []
+            if teams:
+                logo = teams[0].get('strTeamBadge') or teams[0].get('strTeamLogo') or ''
+                _LOGO_CACHE[key] = logo
+                return logo
+    except Exception:
+        pass
+
+    _LOGO_CACHE[key] = ''
+    return ''
+
+
 class SportradarScraper:
     def __init__(self, api_key=None, db=None):
         self.db      = db
@@ -125,20 +205,24 @@ class SportradarScraper:
         ag = status.get('away_score', '')
         minute = status.get('clock', {}).get('played', '') if isinstance(status.get('clock'), dict) else ''
 
+        home_name = home.get('name', '')
+        away_name = away.get('name', '')
+
         return {
             'id':        sport_event.get('id', ''),
-            'name':      f"{home.get('name','')} vs {away.get('name','')}",
+            'name':      f"{home_name} vs {away_name}",
             'date':      sport_event.get('start_time', ''),
             'status':    internal_status,
             'league':    LEAGUE_MAP.get(comp_id, comp_id),
             'sport':     'soccer',
-            'homeTeam':  home.get('name', ''),
-            'awayTeam':  away.get('name', ''),
+            'homeTeam':  home_name,
+            'awayTeam':  away_name,
             'homeScore': str(hg) if internal_status != 'pre' else '',
             'awayScore': str(ag) if internal_status != 'pre' else '',
             'homeAbbr':  home.get('abbreviation', ''),
             'awayAbbr':  away.get('abbreviation', ''),
-            'homeLogo':  '', 'awayLogo': '',
+            'homeLogo':  _get_team_logo(home_name),
+            'awayLogo':  _get_team_logo(away_name),
             'period':    status.get('period', 0),
             'clock':     str(minute) + "'" if minute else '',
             'detail':    sr_stat,
