@@ -83,22 +83,31 @@ _KNOWN_LOGOS = {
 def _get_team_logo(team_name: str) -> str:
     """
     Devuelve la URL del logo de un equipo.
-    1. Busca en logos conocidos (instantáneo).
-    2. Busca en caché en memoria.
-    3. Consulta TheSportsDB (gratuito, sin key).
+    1. Busca en logos conocidos (instantáneo, sin HTTP).
+    2. Busca en caché (populado por _fetch_logo_background).
+    Nunca bloquea — equipos desconocidos devuelven '' hasta que el background los resuelva.
     """
     key = team_name.lower().strip()
 
-    # 1. Logos conocidos
+    # 1. Logos conocidos — instantáneo
     for known, url in _KNOWN_LOGOS.items():
         if known in key or key in known:
             return url
 
-    # 2. Caché en memoria
+    # 2. Caché en memoria (llenado por background)
     if key in _LOGO_CACHE:
         return _LOGO_CACHE[key]
 
-    # 3. TheSportsDB API (gratuita)
+    # 3. Lanzar búsqueda en background (no bloquea el request)
+    import threading as _th
+    _th.Thread(target=_fetch_logo_background, args=(team_name, key), daemon=True).start()
+    return ''  # devuelve vacío ahora; próxima vez ya estará en caché
+
+
+def _fetch_logo_background(team_name: str, cache_key: str):
+    """Busca logo en TheSportsDB en un hilo aparte. Nunca bloquea requests."""
+    if cache_key in _LOGO_CACHE:
+        return
     try:
         r = requests.get(
             'https://www.thesportsdb.com/api/v1/json/3/searchteams.php',
@@ -107,15 +116,10 @@ def _get_team_logo(team_name: str) -> str:
         )
         if r.ok:
             teams = r.json().get('teams') or []
-            if teams:
-                logo = teams[0].get('strTeamBadge') or teams[0].get('strTeamLogo') or ''
-                _LOGO_CACHE[key] = logo
-                return logo
+            logo = teams[0].get('strTeamBadge') or '' if teams else ''
+            _LOGO_CACHE[cache_key] = logo
     except Exception:
-        pass
-
-    _LOGO_CACHE[key] = ''
-    return ''
+        _LOGO_CACHE[cache_key] = ''
 
 
 class SportradarScraper:
