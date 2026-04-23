@@ -263,15 +263,31 @@ class SportradarScraper:
     def get_upcoming_matches(self, days_ahead=1):
         """
         Partidos programados de hoy + próximos días.
+        Solo devuelve partidos NO terminados (pre + in).
+        Excluye partidos ya finalizados (post/closed/ended).
         Incluye La Liga, Premier, Champions, etc.
-        Útil para mostrar fixtures futuros en pronósticos.
         """
         all_matches = []
         seen = set()
+        now_ts = datetime.utcnow().timestamp()
+
         for i in range(days_ahead + 1):
             date_str = (datetime.utcnow() + timedelta(days=i)).strftime('%Y-%m-%d')
             matches = self.get_summaries_by_date(date_str)
             for m in matches:
+                # Saltar partidos terminados
+                if m['status'] == 'post':
+                    continue
+                # Saltar partidos con score real y más de 2 horas en el pasado
+                if m.get('homeScore') not in ('', None) and m.get('awayScore') not in ('', None):
+                    try:
+                        mt = datetime.fromisoformat(
+                            m['date'].replace('Z', '+00:00').replace('+00:00+00:00', '+00:00')
+                        ).timestamp()
+                        if now_ts - mt > 7200:
+                            continue
+                    except Exception:
+                        pass
                 key = (m['homeTeam'], m['awayTeam'])
                 if key not in seen:
                     seen.add(key)
