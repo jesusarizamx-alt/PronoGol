@@ -320,12 +320,20 @@ def change_password():
 
     return jsonify({'ok': True, 'msg': '✅ Contraseña actualizada correctamente'})
 
+# ── Caché de /api/matches (evita llamadas repetidas en cada request) ──
+_matches_cache = {'data': None, 'ts': 0}
+_MATCHES_TTL   = 60  # segundos
+
 # ════════════════════════════════════════════════════════════════
 # RUTAS — PARTIDOS (ESPN + Sportradar)
 # ════════════════════════════════════════════════════════════════
 @app.route('/api/matches')
 @require_login
 def matches():
+    import time as _t
+    # ── Devolver caché si está fresco ────────────────────────────
+    if _matches_cache['data'] and (_t.time() - _matches_cache['ts']) < _MATCHES_TTL:
+        return jsonify(_matches_cache['data'])
     try:
         # ── ESPN: Soccer + NBA + MLB ──────────────────────────────
         data = espn.get_all_today()
@@ -530,7 +538,12 @@ def matches():
 
         data = [m for m in data if not _is_final(m)]
 
-        return jsonify({'matches': data, 'total': len(data)})
+        result = {'matches': data, 'total': len(data)}
+        # Guardar en caché
+        _matches_cache['data'] = result
+        _matches_cache['ts']   = _t.time()
+
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e), 'matches': []}), 500
 
