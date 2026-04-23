@@ -57,6 +57,29 @@ sprt  = SportradarScraper(db=db)                          # Soccer
 snba  = SportradarNBAScraper(db=db) if _NBA_OK else None  # NBA (opcional)
 smlb  = SportradarMLBScraper(db=db) if _MLB_OK else None  # MLB (opcional)
 
+# ── Caché de partidos de mañana (se actualiza en background cada hora) ──
+_sr_tomorrow_cache = []
+
+def _refresh_tomorrow_cache():
+    """Carga partidos de mañana en background sin bloquear requests."""
+    global _sr_tomorrow_cache
+    try:
+        from datetime import datetime, timedelta
+        tomorrow = (datetime.utcnow() + timedelta(days=1)).strftime('%Y-%m-%d')
+        matches = sprt.get_summaries_by_date(tomorrow) if sprt._ok() else []
+        _sr_tomorrow_cache = [m for m in matches if m.get('status') != 'post']
+        print(f"[Server] ✅ Caché mañana: {len(_sr_tomorrow_cache)} partidos")
+    except Exception as e:
+        print(f"[Server] ⚠️ Error caché mañana: {e}")
+
+# Cargar en background al iniciar (con delay para no chocar con otros inits)
+def _init_tomorrow_cache():
+    import time as _t
+    _t.sleep(5)
+    _refresh_tomorrow_cache()
+
+threading.Thread(target=_init_tomorrow_cache, daemon=True).start()
+
 # ── Helper: calcular xG automático (Sportradar DB + historial ponderado) ──
 def calc_auto_xg(team, sport='soccer', default=1.4):
     """
@@ -131,6 +154,14 @@ scheduler.add_job(
     trigger='interval',
     hours=1,
     id='glai_auto_learn',
+    replace_existing=True
+)
+# Refrescar partidos de mañana cada hora en background
+scheduler.add_job(
+    func=_refresh_tomorrow_cache,
+    trigger='interval',
+    hours=1,
+    id='sr_tomorrow_refresh',
     replace_existing=True
 )
 scheduler.start()
@@ -418,12 +449,21 @@ def matches():
         except Exception as _tennis_ex:
             print(f'[Tennis inline] error: {_tennis_ex}')
 
-        # ── Sportradar: hoy + mañana (La Liga, Premier, Champions, etc.) ─
+        # ── Sportradar: hoy (sin sleep, respeta rate limit) ──────────
+        # Mañana se carga en _sr_tomorrow_cache vía hilo background
         if sprt._ok():
-            sr_matches = sprt.get_upcoming_matches(days_ahead=1)  # hoy + mañana
+            sr_matches = sprt.get_today_schedule()  # solo hoy, sin sleep
+            # Agregar caché de mañana si existe
+            if _sr_tomorrow_cache:
+                seen_tm = {(m['homeTeam'], m['awayTeam']) for m in sr_matches}
+                for m in _sr_tomorrow_cache:
+                    if (m['homeTeam'], m['awayTeam']) not in seen_tm:
+                        sr_matches.append(m)
             if sr_matches:
                 existing = {(m['homeTeam'], m['awayTeam']) for m in data}
                 for m in sr_matches:
+                    if m.get('status') == 'post':
+                        continue
                     key = (m['homeTeam'], m['awayTeam'])
                     if key not in existing:
                         data.append(m)
